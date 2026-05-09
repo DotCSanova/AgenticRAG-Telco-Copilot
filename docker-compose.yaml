@@ -1,0 +1,19 @@
+services:
+  agent-api:
+    container_name: RAG-Agent
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    networks:
+      - RAG-Agent-network
+
+volumes:
+  data:
+
+networks:
+  RAG-Agent-network:
+    name: RAG-Agent-network
