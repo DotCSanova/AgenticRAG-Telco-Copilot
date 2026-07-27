@@ -14,6 +14,17 @@ dependencies = [
   "pydantic",
   "pydantic-settings",
   "ipykernel",
+  "pymupdf>=1.27.2.3",
+  "ollama>=0.6.2",
+  "requests>=2.33.1",
+  "pillow>=12.2.0",
+  "docling>=2.93.0",
+  "torch>=2.5.1",
+  "torchvision>=0.20.1",
+  "qdrant-client>=1.14.0",
+  "cohere>=7.0.8",
+  "fastembed>=0.8.0",
+  "sentence-transformers>=5.6.1",
 ]
 requires-python = ">= 3.10"
 
@@ -48,3 +59,16 @@ select = [
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu124", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+torchvision = [
+  { index = "pytorch-cu124", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true

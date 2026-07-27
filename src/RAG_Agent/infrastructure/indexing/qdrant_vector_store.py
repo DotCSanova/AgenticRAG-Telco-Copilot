@@ -1,0 +1,147 @@
+from __future__ import annotations
+
+import logging
+import uuid
+from typing import Any
+
+from qdrant_client import QdrantClient
+from qdrant_client.models import (
+    Distance,
+    Modifier,
+    PointStruct,
+    SparseVector,
+    SparseVectorParams,
+    VectorParams,
+)
+
+from RAG_Agent.config import settings
+from RAG_Agent.domain.value_objects.chunk import Chunk
+from RAG_Agent.domain.value_objects.embedding import TextEmbedding
+
+logger = logging.getLogger(__name__)
+
+DENSE_VECTOR_NAME = "dense"
+SPARSE_VECTOR_NAME = "sparse"
+
+
+class QdrantVectorStore:
+    """Adapter Qdrant: dense (+ sparse opcional) con vectores nombrados."""
+
+    def __init__(
+        self,
+        *,
+        collection_name: str | None = None,
+        client: QdrantClient | None = None,
+        enable_sparse: bool | None = None,
+    ) -> None:
+        self._collection = collection_name or settings.qdrant_collection
+        self._enable_sparse = (
+            settings.qdrant_enable_sparse if enable_sparse is None else enable_sparse
+        )
+        self._client = client or self._build_client()
+        self._ready_for_dim: int | None = None
+
+    @staticmethod
+    def _build_client() -> QdrantClient:
+        mode = settings.qdrant_mode.lower()
+        if mode == "memory":
+            return QdrantClient(location=":memory:")
+        if mode == "cloud":
+            if not settings.qdrant_url:
+                raise ValueError("QDRANT_URL is required when QDRANT_MODE=cloud")
+            return QdrantClient(
+                url=settings.qdrant_url,
+                api_key=settings.qdrant_api_key or None,
+            )
+        if settings.qdrant_url:
+            return QdrantClient(
+                url=settings.qdrant_url,
+                api_key=settings.qdrant_api_key or None,
+            )
+        return QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+
+    def _ensure_collection(self, dense_dim: int) -> None:
+        if self._ready_for_dim == dense_dim:
+            return
+
+        if not self._client.collection_exists(self._collection):
+            sparse_config = None
+            if self._enable_sparse:
+                sparse_config = {
+                    SPARSE_VECTOR_NAME: SparseVectorParams(modifier=Modifier.IDF),
+                }
+            self._client.create_collection(
+                collection_name=self._collection,
+                vectors_config={
+                    DENSE_VECTOR_NAME: VectorParams(size=dense_dim, distance=Distance.COSINE),
+                },
+                sparse_vectors_config=sparse_config,
+            )
+            logger.info(
+                "Created Qdrant collection %s (dense_dim=%d, sparse=%s)",
+                self._collection,
+                dense_dim,
+                self._enable_sparse,
+            )
+
+        self._ready_for_dim = dense_dim
+
+    @staticmethod
+    def _point_id(chunk_id: str) -> str:
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, chunk_id))
+
+    @staticmethod
+    def _payload(chunk: Chunk) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "chunk_id": chunk.id,
+            "doc_id": chunk.doc_id,
+            "text": chunk.text,
+            "block_ids": list(chunk.block_ids),
+            **chunk.metadata,
+        }
+        if chunk.page_start is not None:
+            payload["page_start"] = chunk.page_start
+        if chunk.page_end is not None:
+            payload["page_end"] = chunk.page_end
+        if chunk.section_id is not None:
+            payload["section_id"] = chunk.section_id
+        return payload
+
+    def _point_vector(self, embedding: TextEmbedding) -> dict[str, Any]:
+        vector: dict[str, Any] = {DENSE_VECTOR_NAME: list(embedding.dense)}
+        if embedding.sparse is not None:
+            if not self._enable_sparse:
+                raise ValueError(
+                    "Received sparse embedding but qdrant_enable_sparse is False"
+                )
+            vector[SPARSE_VECTOR_NAME] = SparseVector(
+                indices=list(embedding.sparse.indices),
+                values=list(embedding.sparse.values),
+            )
+        return vector
+
+    def upsert(self, chunks: list[Chunk], embeddings: list[TextEmbedding]) -> int:
+        if len(chunks) != len(embeddings):
+            raise ValueError(
+                f"chunks ({len(chunks)}) and embeddings ({len(embeddings)}) length mismatch"
+            )
+        if not chunks:
+            return 0
+
+        dense_dim = len(embeddings[0].dense)
+        if any(len(item.dense) != dense_dim for item in embeddings):
+            raise ValueError("all dense embeddings must share the same dimension")
+
+        self._ensure_collection(dense_dim)
+
+        points = [
+            PointStruct(
+                id=self._point_id(chunk.id),
+                vector=self._point_vector(embedding),
+                payload=self._payload(chunk),
+            )
+            for chunk, embedding in zip(chunks, embeddings, strict=True)
+        ]
+        self._client.upsert(collection_name=self._collection, points=points, wait=True)
+        logger.info("Upserted %d points into %s", len(points), self._collection)
+        return len(points)

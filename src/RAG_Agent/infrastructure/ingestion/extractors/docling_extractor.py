@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+import fitz
+import torch
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import (
+    AcceleratorDevice,
+    AcceleratorOptions,
+    PdfPipelineOptions,
+)
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling_core.types.doc import DoclingDocument
+
+from RAG_Agent.infrastructure.ingestion.exceptions import PDFParsingException, PDFValidationError
+
+logger = logging.getLogger(__name__)
+
+
+class DoclingExtractor:
+    """Extrae un DoclingDocument desde un PDF (texto nativo u OCR previo).
+
+    ``max_pages`` es el techo por llamada (típicamente el tamaño de shard del perfil).
+    Documentos largos los trocea ``NativePdfPipeline``, no se rechazan aquí.
+    """
+
+    def __init__(
+        self,
+        max_pages: int = 50,
+        max_file_size_mb: int = 200,
+        do_ocr: bool = False,
+        do_table_structure: bool = True,
+    ) -> None:
+        pipeline_options = PdfPipelineOptions(
+            do_table_structure=do_table_structure,
+            do_ocr=do_ocr,
+            layout_batch_size=4,
+            table_batch_size=2,
+        )
+
+        if torch.cuda.is_available():
+            logger.info("GPU detected: %s", torch.cuda.get_device_name(0))
+            pipeline_options.accelerator_options = AcceleratorOptions(
+                num_threads=4,
+                device=AcceleratorDevice.CUDA,
+            )
+        else:
+            logger.warning("Running Docling on CPU; conversion may be slow")
+
+        self._converter = DocumentConverter(
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)},
+        )
+        self._max_pages = max_pages
+        self._max_file_size_bytes = max_file_size_mb * 1024 * 1024
+
+    def extract(self, pdf_path: Path) -> DoclingDocument:
+        """Convierte un PDF (o shard) a DoclingDocument."""
+        pdf_path = Path(pdf_path)
+        page_count = self._validate_pdf(pdf_path)
+        logger.info("Extracting PDF (%d pages): %s", page_count, pdf_path.name)
+        return self._convert_file(pdf_path)
+
+    def _convert_file(self, pdf_path: Path) -> DoclingDocument:
+        try:
+            result = self._converter.convert(
+                str(pdf_path),
+                max_num_pages=self._max_pages,
+                max_file_size=self._max_file_size_bytes,
+            )
+        except Exception as exc:
+            msg = f"Docling failed to convert {pdf_path.name}: {exc}"
+            raise PDFParsingException(msg) from exc
+
+        if result.document is None:
+            msg = f"Docling returned no document for {pdf_path.name}"
+            raise PDFParsingException(msg)
+
+        return result.document
+
+    def _validate_pdf(self, pdf_path: Path) -> int:
+        if not pdf_path.exists():
+            raise PDFValidationError(f"PDF not found: {pdf_path}")
+
+        file_size = pdf_path.stat().st_size
+        if file_size == 0:
+            raise PDFValidationError(f"PDF file is empty: {pdf_path}")
+
+        if file_size > self._max_file_size_bytes:
+            raise PDFValidationError(
+                f"PDF too large: {file_size / 1024 / 1024:.1f}MB > "
+                f"{self._max_file_size_bytes / 1024 / 1024:.1f}MB"
+            )
+
+        with pdf_path.open("rb") as pdf_file:
+            if not pdf_file.read(8).startswith(b"%PDF-"):
+                raise PDFValidationError(f"File does not have PDF header: {pdf_path}")
+
+        page_count = count_pdf_pages(pdf_path)
+        if page_count > self._max_pages:
+            raise PDFValidationError(
+                f"PDF shard/page batch too large: {page_count} > {self._max_pages}. "
+                "NativePdfPipeline should split before extract."
+            )
+        return page_count
+
+
+def count_pdf_pages(pdf_path: Path) -> int:
+    """Cuenta páginas con PyMuPDF (mismo backend que preprocess y sharding)."""
+    with fitz.open(pdf_path) as doc:
+        return doc.page_count

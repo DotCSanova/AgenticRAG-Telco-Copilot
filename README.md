@@ -1,6 +1,6 @@
-# Agentic-RAG Chatbot
+# Agentic RAG Engineering Copilot for Telco
 
-A Agentic-RAG Chatbot for technical documents
+An Techical Copilot based in Agentic-RAG, designed specifically to allow Telecom engineers in the task of understanding technical docs.
 
 ## Features
 
