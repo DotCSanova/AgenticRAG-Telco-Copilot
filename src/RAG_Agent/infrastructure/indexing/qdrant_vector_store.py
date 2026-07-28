@@ -7,8 +7,11 @@ from typing import Any
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
+    Fusion,
+    FusionQuery,
     Modifier,
     PointStruct,
+    Prefetch,
     SparseVector,
     SparseVectorParams,
     VectorParams,
@@ -17,6 +20,7 @@ from qdrant_client.models import (
 from RAG_Agent.config import settings
 from RAG_Agent.domain.value_objects.chunk import Chunk
 from RAG_Agent.domain.value_objects.embedding import TextEmbedding
+from RAG_Agent.domain.value_objects.search_hit import RetrievedChunk
 
 logger = logging.getLogger(__name__)
 
@@ -145,3 +149,46 @@ class QdrantVectorStore:
         self._client.upsert(collection_name=self._collection, points=points, wait=True)
         logger.info("Upserted %d points into %s", len(points), self._collection)
         return len(points)
+
+    def search(self, embedding: TextEmbedding, *, limit: int) -> list[RetrievedChunk]:
+        if limit < 1:
+            raise ValueError(f"limit must be >= 1, got {limit}")
+
+        dense = list(embedding.dense)
+        prefetch_limit = max(limit, settings.retrieval_prefetch_limit)
+
+        if self._enable_sparse and embedding.sparse is not None:
+            sparse = SparseVector(
+                indices=list(embedding.sparse.indices),
+                values=list(embedding.sparse.values),
+            )
+            response = self._client.query_points(
+                collection_name=self._collection,
+                prefetch=[
+                    Prefetch(query=dense, using=DENSE_VECTOR_NAME, limit=prefetch_limit),
+                    Prefetch(query=sparse, using=SPARSE_VECTOR_NAME, limit=prefetch_limit),
+                ],
+                query=FusionQuery(fusion=Fusion.RRF),
+                limit=limit,
+                with_payload=True,
+            )
+        else:
+            response = self._client.query_points(
+                collection_name=self._collection,
+                query=dense,
+                using=DENSE_VECTOR_NAME,
+                limit=limit,
+                with_payload=True,
+            )
+
+        return [_point_to_retrieved(point) for point in response.points]
+
+
+def _point_to_retrieved(point: Any) -> RetrievedChunk:
+    payload = point.payload or {}
+    return RetrievedChunk(
+        text=str(payload.get("text") or ""),
+        doc_id=str(payload.get("doc_id") or ""),
+        section_path=str(payload.get("section_path") or ""),
+        score=float(point.score) if point.score is not None else None,
+    )

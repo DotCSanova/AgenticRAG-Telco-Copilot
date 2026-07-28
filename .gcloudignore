@@ -1,0 +1,48 @@
+# Filters what `gcloud builds submit` uploads to Cloud Build.
+#
+# Important: gcloud does NOT read .dockerignore — it reads this file, falling
+# back to .gitignore if absent. So this file exists to keep huge local-only
+# stuff (notably .venv/) out of the source tarball Cloud Build receives.
+#
+# What Cloud Build actually needs to build the image:
+#   • Dockerfile
+#   • pyproject.toml
+#   • src/
+
+# ─── Python / uv ─────────────────────────────────────────────────────────────
+.venv/
+.python-version
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Secrets ─────────────────────────────────────────────────────────────────
+.env
+.env.*
+
+# ─── VCS / tooling ───────────────────────────────────────────────────────────
+.git/
+.gitignore
+.gcloudignore
+.dockerignore
+
+# ─── Project artefacts not needed by the build ───────────────────────────────
+data/
+docs/
+labs/
+images/
+scripts/
+README.md
+README_*.md
+Makefile
+docker-compose.yml
+
+# ─── Editor / OS ─────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+.DS_Store

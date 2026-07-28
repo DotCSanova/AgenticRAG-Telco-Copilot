@@ -11,14 +11,16 @@ import torch
 
 from RAG_Agent.domain.ports.chunker import Chunker
 from RAG_Agent.domain.value_objects.block import Block, BlockType
+from RAG_Agent.domain.value_objects.block_render import BlockTextFormat, block_text
 from RAG_Agent.domain.value_objects.canonical_document import CanonicalDocument
 from RAG_Agent.domain.value_objects.chunk import Chunk
-from RAG_Agent.infrastructure.indexing.block_text import block_text
 
 logger = logging.getLogger(__name__)
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.?!])\s+")
-_ATOMIC_BLOCK_TYPES = frozenset({BlockType.TABLE, BlockType.CODE, BlockType.FORMULA})
+_ATOMIC_BLOCK_TYPES = frozenset(
+    {BlockType.TABLE, BlockType.CODE, BlockType.FORMULA, BlockType.IMAGE}
+)
 
 
 class _Encoder(Protocol):
@@ -85,6 +87,7 @@ class SemanticChunker(Chunker):
                         "chunk_index": str(index),
                         "chunker": "semantic",
                         "n_units": str(len(group)),
+                        "text_format": "markdown",
                     },
                 )
             )
@@ -119,10 +122,10 @@ def _units_from_document(document: CanonicalDocument) -> list[_Unit]:
 
 
 def _units_from_block(block: Block) -> list[_Unit]:
-    text = block_text(block)
+    text = block_text(block, fmt=BlockTextFormat.MARKDOWN)
     if not text:
         return []
-    if block.type in _ATOMIC_BLOCK_TYPES:
+    if block.type in _ATOMIC_BLOCK_TYPES or block.type == BlockType.HEADING:
         return [_Unit(text=text, block_id=block.id, page=block.page)]
 
     sentences = [part.strip() for part in _SENTENCE_SPLIT_RE.split(text) if part.strip()]

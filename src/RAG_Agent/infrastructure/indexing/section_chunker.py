@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from RAG_Agent.domain.ports.chunker import Chunker
+from RAG_Agent.domain.value_objects.block_render import BlockTextFormat, render_blocks
 from RAG_Agent.domain.value_objects.canonical_document import CanonicalDocument
 from RAG_Agent.domain.value_objects.chunk import Chunk
 from RAG_Agent.domain.value_objects.section import Section
-from RAG_Agent.infrastructure.indexing.block_text import render_blocks
 
 
 class SectionChunker(Chunker):
@@ -25,7 +25,7 @@ class SectionChunker(Chunker):
         chunks: list[Chunk] = []
         for index, section in enumerate(leaves):
             blocks = document.blocks_for_section(section.id)
-            text, block_ids = render_blocks(blocks)
+            text, block_ids = render_blocks(blocks, fmt=BlockTextFormat.MARKDOWN)
             if not text:
                 continue
             path = _section_path(section, by_id)
@@ -43,6 +43,7 @@ class SectionChunker(Chunker):
                         "section_level": str(section.level),
                         "section_path": path,
                         "chunk_index": str(index),
+                        "text_format": "markdown",
                     },
                 )
             )
@@ -70,7 +71,7 @@ def _section_path(section: Section, by_id: dict[str, Section], *, sep: str = " >
 
 def _chunks_from_orphan_blocks(document: CanonicalDocument, doc_id: str) -> list[Chunk]:
     blocks = sorted(document.blocks.values(), key=lambda block: block.order)
-    text, block_ids = render_blocks(blocks)
+    text, block_ids = render_blocks(blocks, fmt=BlockTextFormat.MARKDOWN)
     if not text:
         return []
     pages = [block.page for block in blocks if block.page is not None]
@@ -82,6 +83,6 @@ def _chunks_from_orphan_blocks(document: CanonicalDocument, doc_id: str) -> list
             page_start=min(pages) if pages else None,
             page_end=max(pages) if pages else None,
             block_ids=block_ids,
-            metadata={"chunk_index": "0", "section_path": ""},
+            metadata={"chunk_index": "0", "section_path": "", "text_format": "markdown"},
         )
     ]

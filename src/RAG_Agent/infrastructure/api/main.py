@@ -2,26 +2,34 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
 
 from RAG_Agent.application.ingest_documents_service.ingest_document import IngestDocumentService
 from RAG_Agent.config import settings
+from RAG_Agent.infrastructure.agent.agent import build_root_agent
+from RAG_Agent.infrastructure.agent.tools.search_documents import make_search_documents_tool
 from RAG_Agent.infrastructure.api.models import (
     ChatRequest,
+    ChatResponse,
     EvalRequest,
     IngestDocumentsRequest,
     IngestDocumentsResponse,
     ResetMemoryRequest,
+    ResetMemoryResponse,
 )
-from RAG_Agent.infrastructure.indexing.bm25_embedder import BM25Embedder
-from RAG_Agent.infrastructure.indexing.cohere_embedder import CohereEmbedder
-from RAG_Agent.infrastructure.indexing.hybrid_embedder import HybridEmbedder
-from RAG_Agent.infrastructure.indexing.qdrant_vector_store import QdrantVectorStore
-from RAG_Agent.infrastructure.indexing.section_chunker import SectionChunker
-from RAG_Agent.infrastructure.indexing.semantic_chunker import SemanticChunker
+from RAG_Agent.infrastructure.composition import (
+    build_chunker,
+    build_embedder,
+    build_search_service,
+    build_vector_store,
+)
 from RAG_Agent.infrastructure.ingestion.cascading_profile_resolver import CascadingProfileResolver
 from RAG_Agent.infrastructure.ingestion.exceptions import PDFParsingException, PDFValidationError
 from RAG_Agent.infrastructure.ingestion.native_pdf_pipeline import NativePdfPipeline
@@ -29,42 +37,76 @@ from RAG_Agent.infrastructure.ingestion.native_pdf_pipeline import NativePdfPipe
 logger = logging.getLogger(__name__)
 
 
-def _build_embedder():
-    dense = CohereEmbedder()
-    if settings.qdrant_enable_sparse:
-        return HybridEmbedder(dense=dense, sparse=BM25Embedder())
-    return dense
+def _final_text_from_event(event) -> str | None:
+    if not event.is_final_response():
+        return None
+    content = event.content
+    if content is None or not content.parts:
+        return None
+    texts = [part.text for part in content.parts if getattr(part, "text", None)]
+    if not texts:
+        return None
+    return "\n".join(texts)
 
 
-def _build_chunker():
-    name = settings.chunker.lower().strip()
-    if name == "section":
-        return SectionChunker()
-    if name == "semantic":
-        return SemanticChunker(
-            model_name=settings.semantic_chunk_model,
-            threshold=settings.semantic_chunk_threshold,
-            min_tokens=settings.semantic_chunk_min_tokens,
-            max_tokens=settings.semantic_chunk_max_tokens,
+async def _ensure_session(
+    session_service: InMemorySessionService,
+    *,
+    app_name: str,
+    user_id: str,
+    session_id: str | None,
+):
+    if session_id:
+        existing = await session_service.get_session(
+            app_name=app_name,
+            user_id=user_id,
+            session_id=session_id,
         )
-    raise ValueError(f"Unknown chunker={settings.chunker!r} (expected section|semantic)")
+        if existing is not None:
+            return existing
+    return await session_service.create_session(
+        app_name=app_name,
+        user_id=user_id,
+        session_id=session_id or str(uuid.uuid4()),
+    )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Composition root: parse + chunk + hybrid embed + Qdrant.
+    # Composition root: ingest + search + ADK runner.
     parser = NativePdfPipeline(CascadingProfileResolver())
-    chunker = _build_chunker()
+    chunker = build_chunker()
+    embedder = build_embedder()
+    vector_store = build_vector_store()
+
     app.state.ingest_service = IngestDocumentService(
         parser=parser,
         chunker=chunker,
-        embedder=_build_embedder(),
-        vector_store=QdrantVectorStore(),
+        embedder=embedder,
+        vector_store=vector_store,
     )
+
+    search_service = build_search_service(embedder=embedder, vector_store=vector_store)
+    search_tool = make_search_documents_tool(search_service)
+    root_agent = build_root_agent(tools=[search_tool])
+    session_service = InMemorySessionService()
+    app_name = settings.agent_app_name
+    runner = Runner(
+        agent=root_agent,
+        app_name=app_name,
+        session_service=session_service,
+    )
+
+    app.state.search_service = search_service
+    app.state.session_service = session_service
+    app.state.runner = runner
+    app.state.agent_app_name = app_name
+
     logger.info(
-        "IngestDocumentService ready (chunker=%s, sparse=%s)",
+        "Services ready (chunker=%s, sparse=%s, agent_model=%s)",
         settings.chunker,
         settings.qdrant_enable_sparse,
+        settings.agent_model,
     )
     yield
 
@@ -82,9 +124,45 @@ async def root():
     return {"message": "Welcome to RAG-Agent API. Visit /docs for documentation"}
 
 
-@app.post("/chat")
-async def chat(request: ChatRequest):
-    return {"message": "Chat request received"}
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest, http_request: Request):
+    runner: Runner = http_request.app.state.runner
+    session_service: InMemorySessionService = http_request.app.state.session_service
+    app_name: str = http_request.app.state.agent_app_name
+
+    session = await _ensure_session(
+        session_service,
+        app_name=app_name,
+        user_id=request.user_id,
+        session_id=request.session_id,
+    )
+
+    user_message = types.Content(
+        role="user",
+        parts=[types.Part(text=request.message)],
+    )
+    final_text = ""
+    try:
+        async for event in runner.run_async(
+            user_id=request.user_id,
+            session_id=session.id,
+            new_message=user_message,
+        ):
+            text = _final_text_from_event(event)
+            if text is not None:
+                final_text = text
+    except Exception as exc:
+        logger.exception("Chat failed for session=%s", session.id)
+        raise HTTPException(status_code=500, detail=f"Chat failed: {exc}") from exc
+
+    if not final_text:
+        raise HTTPException(status_code=502, detail="Agent returned no final response")
+
+    return ChatResponse(
+        message=final_text,
+        user_id=request.user_id,
+        session_id=session.id,
+    )
 
 
 @app.post("/eval")
@@ -133,9 +211,33 @@ async def ingest_documents(request: IngestDocumentsRequest, http_request: Reques
     )
 
 
-@app.post("/reset-memory")
-async def reset_memory(request: ResetMemoryRequest):
-    return {"message": "Reset memory request received"}
+@app.post("/reset-memory", response_model=ResetMemoryResponse)
+async def reset_memory(request: ResetMemoryRequest, http_request: Request):
+    session_service: InMemorySessionService = http_request.app.state.session_service
+    app_name: str = http_request.app.state.agent_app_name
+
+    existing = await session_service.get_session(
+        app_name=app_name,
+        user_id=request.user_id,
+        session_id=request.session_id,
+    )
+    if existing is not None:
+        await session_service.delete_session(
+            app_name=app_name,
+            user_id=request.user_id,
+            session_id=request.session_id,
+        )
+
+    await session_service.create_session(
+        app_name=app_name,
+        user_id=request.user_id,
+        session_id=request.session_id,
+    )
+    return ResetMemoryResponse(
+        user_id=request.user_id,
+        session_id=request.session_id,
+        reset=True,
+    )
 
 
 if __name__ == "__main__":

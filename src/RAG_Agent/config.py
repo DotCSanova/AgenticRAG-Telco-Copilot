@@ -26,5 +26,15 @@ class Settings(BaseSettings):
     qdrant_collection: str = "tech_docs"
     qdrant_enable_sparse: bool = True
 
+    # Retrieval + rerank
+    retrieval_prefetch_limit: int = 30
+    retrieval_candidate_limit: int = 30
+    rerank_top_n: int = 10
+    rerank_model: str = "rerank-v3.5"
+
+    # Agent (ADK + LiteLLM)
+    agent_model: str = "cohere_chat/command-a-03-2025"
+    agent_app_name: str = "Agentic RAG Engineering Copilot for Telco"
+
 
 settings = Settings()

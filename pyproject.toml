@@ -25,6 +25,8 @@ dependencies = [
   "cohere>=7.0.8",
   "fastembed>=0.8.0",
   "sentence-transformers>=5.6.1",
+  "google-adk>=1.0.0",
+  "litellm>=1.0.0",
 ]
 requires-python = ">= 3.10"
 

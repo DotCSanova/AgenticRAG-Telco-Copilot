@@ -29,6 +29,7 @@ def test_cascading_resolver_default():
 def test_ingest_endpoint_missing_file(monkeypatch):
     monkeypatch.setenv("COHERE_API_KEY", "test-dummy-key")
     monkeypatch.setattr(settings, "qdrant_enable_sparse", False)
+    monkeypatch.setattr(settings, "qdrant_mode", "memory")
     with TestClient(app) as client:
         response = client.post("/ingest", json={"path": "data/does-not-exist.pdf"})
     assert response.status_code == 404

@@ -50,3 +50,62 @@ def test_qdrant_upsert_length_mismatch():
         raise AssertionError("expected ValueError")
     except ValueError:
         pass
+
+
+def test_qdrant_search_dense_returns_payload_fields():
+    client = QdrantClient(location=":memory:")
+    store = QdrantVectorStore(collection_name="test_search", client=client, enable_sparse=False)
+    chunks = [
+        Chunk(
+            id="doc1:c0",
+            doc_id="doc1",
+            text="Near-RT RIC handover",
+            metadata={"section_path": "4 Use cases > 4.1 HO"},
+        ),
+        Chunk(
+            id="doc1:c1",
+            doc_id="doc1",
+            text="unrelated energy saving",
+            metadata={"section_path": "4 Use cases > 4.9"},
+        ),
+    ]
+    embeddings = [
+        TextEmbedding(dense=(1.0, 0.0, 0.0)),
+        TextEmbedding(dense=(0.0, 1.0, 0.0)),
+    ]
+    store.upsert(chunks, embeddings)
+
+    hits = store.search(TextEmbedding(dense=(0.95, 0.05, 0.0)), limit=1)
+    assert len(hits) == 1
+    assert hits[0].doc_id == "doc1"
+    assert hits[0].text == "Near-RT RIC handover"
+    assert hits[0].section_path == "4 Use cases > 4.1 HO"
+
+
+def test_qdrant_search_hybrid_rrf():
+    client = QdrantClient(location=":memory:")
+    store = QdrantVectorStore(collection_name="test_hybrid_search", client=client, enable_sparse=True)
+    chunks = [
+        Chunk(
+            id="doc1:c0",
+            doc_id="doc1",
+            text="traffic steering",
+            metadata={"section_path": "4.5 Traffic steering"},
+        )
+    ]
+    embeddings = [
+        TextEmbedding(
+            dense=(0.2, 0.3, 0.4),
+            sparse=SparseEmbedding(indices=(3, 9), values=(0.5, 0.8)),
+        )
+    ]
+    store.upsert(chunks, embeddings)
+    hits = store.search(
+        TextEmbedding(
+            dense=(0.2, 0.3, 0.4),
+            sparse=SparseEmbedding(indices=(3, 9), values=(0.5, 0.8)),
+        ),
+        limit=5,
+    )
+    assert len(hits) == 1
+    assert hits[0].section_path == "4.5 Traffic steering"

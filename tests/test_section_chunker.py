@@ -116,7 +116,10 @@ def test_section_chunker_renders_tables_and_skips_empty_blocks():
     assert len(chunks) == 1
     assert chunks[0].block_ids == ("h", "t")
     assert chunks[0].metadata["section_path"] == "Tables"
-    assert "A | B" in chunks[0].text
+    assert chunks[0].metadata["text_format"] == "markdown"
+    assert chunks[0].text.startswith("# Tables")
+    assert "| A | B |" in chunks[0].text
+    assert "**Table 1**" in chunks[0].text
 
 
 def test_section_chunker_skips_leaf_with_no_text():

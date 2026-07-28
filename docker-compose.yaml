@@ -1,6 +1,6 @@
 services:
   agent-api:
-    container_name: RAG-Agent
+    container_name: RAG-Agent-api
     build:
       context: .
       dockerfile: Dockerfile
@@ -8,6 +8,30 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    networks:
+      - RAG-Agent-network
+
+  # ADK Dev UI (pruebas del agente). No es la API de producto.
+  agent-dev-ui:
+    container_name: RAG-Agent-dev-ui
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command:
+      [
+        "/app/.venv/bin/uvicorn",
+        "RAG_Agent.infrastructure.agent.dev_ui:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8080",
+      ]
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    profiles:
+      - dev
     networks:
       - RAG-Agent-network
 
