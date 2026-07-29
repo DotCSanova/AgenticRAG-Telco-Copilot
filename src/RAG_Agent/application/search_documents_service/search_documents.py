@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from RAG_Agent.config import settings
 from RAG_Agent.domain.ports.embedder import Embedder
 from RAG_Agent.domain.ports.reranker import Reranker
 from RAG_Agent.domain.ports.vector_store import VectorStore
@@ -16,25 +15,28 @@ class SearchDocumentsService:
     embedder: Embedder
     vector_store: VectorStore
     reranker: Reranker
-    candidate_limit: int | None = None
-    rerank_top_n: int | None = None
+    candidate_limit: int
+    rerank_top_n: int
+
+    def __post_init__(self) -> None:
+        if self.candidate_limit < 1:
+            raise ValueError(f"candidate_limit must be >= 1, got {self.candidate_limit}")
+        if self.rerank_top_n < 1:
+            raise ValueError(f"rerank_top_n must be >= 1, got {self.rerank_top_n}")
 
     def execute(self, query: str) -> list[SearchHit]:
         if not query.strip():
             raise ValueError("query must be non-empty")
 
-        candidate_limit = self.candidate_limit or settings.retrieval_candidate_limit
-        top_n = self.rerank_top_n or settings.rerank_top_n
-
         embedding = self.embedder.embed_query(query)
-        candidates = self.vector_store.search(embedding, limit=candidate_limit)
+        candidates = self.vector_store.search(embedding, limit=self.candidate_limit)
         if not candidates:
             return []
 
         ranked = self.reranker.rerank(
             query,
             [chunk.text for chunk in candidates],
-            top_n=min(top_n, len(candidates)),
+            top_n=min(self.rerank_top_n, len(candidates)),
         )
         hits: list[SearchHit] = []
         for item in ranked:

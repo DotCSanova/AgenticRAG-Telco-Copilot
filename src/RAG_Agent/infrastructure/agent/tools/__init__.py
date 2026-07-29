@@ -1,1 +1,0 @@
-"""ADK function tools."""

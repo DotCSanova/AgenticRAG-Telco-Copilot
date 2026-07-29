@@ -1,1 +1,1 @@
-"""ADK agent adapters (LLM + tools)."""
+"""ADK agent adapters (runtime, sessions, LiteLLM)."""

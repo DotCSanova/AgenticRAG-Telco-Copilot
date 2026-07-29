@@ -17,14 +17,12 @@ class Settings(BaseSettings):
     semantic_chunk_min_tokens: int = 64
     semantic_chunk_max_tokens: int = 128
 
-    # Qdrant: mode=local|cloud|memory
-    qdrant_mode: str = "local"
+    # Qdrant: URL (+ optional API key for Cloud). Empty URL → localhost.
     qdrant_url: str | None = None
     qdrant_api_key: str | None = None
-    qdrant_host: str = "localhost"
-    qdrant_port: int = 6333
     qdrant_collection: str = "tech_docs"
     qdrant_enable_sparse: bool = True
+    qdrant_in_memory: bool = False  # tests only
 
     # Retrieval + rerank
     retrieval_prefetch_limit: int = 30
@@ -32,9 +30,21 @@ class Settings(BaseSettings):
     rerank_top_n: int = 10
     rerank_model: str = "rerank-v3.5"
 
+    # Provider switches (composition root). Hoy solo una opción por slot.
+    dense_embedder: str = "cohere"  # cohere
+    reranker_provider: str = "cohere"  # cohere
+    vector_store_provider: str = "qdrant"  # qdrant
+
     # Agent (ADK + LiteLLM)
     agent_model: str = "cohere_chat/command-a-03-2025"
     agent_app_name: str = "Agentic RAG Engineering Copilot for Telco"
+
+    # Sessions (ADK). Prefer SESSIONS_DB_URL; else Cloud SQL socket from secrets.
+    sessions_db_url: str | None = None
+    db_user: str = "app"
+    db_pass: str | None = None
+    sessions_db_name: str = "sessions"
+    cloudsql_instance: str | None = None  # project:region:instance
 
 
 settings = Settings()

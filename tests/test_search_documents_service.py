@@ -57,5 +57,21 @@ def test_search_documents_service_empty_store():
         embedder=_FakeEmbedder(),
         vector_store=_FakeStore([]),
         reranker=_FakeReranker(),
+        candidate_limit=10,
+        rerank_top_n=5,
     )
     assert service.execute("anything") == []
+
+
+def test_search_documents_service_rejects_invalid_limits():
+    try:
+        SearchDocumentsService(
+            embedder=_FakeEmbedder(),
+            vector_store=_FakeStore([]),
+            reranker=_FakeReranker(),
+            candidate_limit=0,
+            rerank_top_n=5,
+        )
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass

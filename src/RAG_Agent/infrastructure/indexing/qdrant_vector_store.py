@@ -37,32 +37,28 @@ class QdrantVectorStore:
         collection_name: str | None = None,
         client: QdrantClient | None = None,
         enable_sparse: bool | None = None,
+        prefetch_limit: int | None = None,
     ) -> None:
         self._collection = collection_name or settings.qdrant_collection
         self._enable_sparse = (
             settings.qdrant_enable_sparse if enable_sparse is None else enable_sparse
         )
+        self._prefetch_limit = (
+            settings.retrieval_prefetch_limit if prefetch_limit is None else prefetch_limit
+        )
+        if self._prefetch_limit < 1:
+            raise ValueError(f"prefetch_limit must be >= 1, got {self._prefetch_limit}")
         self._client = client or self._build_client()
         self._ready_for_dim: int | None = None
 
     @staticmethod
     def _build_client() -> QdrantClient:
-        mode = settings.qdrant_mode.lower()
-        if mode == "memory":
+        if settings.qdrant_in_memory:
             return QdrantClient(location=":memory:")
-        if mode == "cloud":
-            if not settings.qdrant_url:
-                raise ValueError("QDRANT_URL is required when QDRANT_MODE=cloud")
-            return QdrantClient(
-                url=settings.qdrant_url,
-                api_key=settings.qdrant_api_key or None,
-            )
-        if settings.qdrant_url:
-            return QdrantClient(
-                url=settings.qdrant_url,
-                api_key=settings.qdrant_api_key or None,
-            )
-        return QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+
+        url = (settings.qdrant_url or "http://localhost:6333").strip()
+        api_key = (settings.qdrant_api_key or "").strip() or None
+        return QdrantClient(url=url, api_key=api_key)
 
     def _ensure_collection(self, dense_dim: int) -> None:
         if self._ready_for_dim == dense_dim:
@@ -155,7 +151,7 @@ class QdrantVectorStore:
             raise ValueError(f"limit must be >= 1, got {limit}")
 
         dense = list(embedding.dense)
-        prefetch_limit = max(limit, settings.retrieval_prefetch_limit)
+        prefetch_limit = max(limit, self._prefetch_limit)
 
         if self._enable_sparse and embedding.sparse is not None:
             sparse = SparseVector(

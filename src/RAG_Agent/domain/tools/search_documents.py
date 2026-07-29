@@ -1,16 +1,21 @@
+"""Tool cruda de búsqueda documental (sin frameworks de agente)."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
 
-from RAG_Agent.application.search_documents_service.search_documents import SearchDocumentsService
 from RAG_Agent.domain.value_objects.search_hit import SearchHit
 
+SearchFn = Callable[[str], list[SearchHit]]
 
-def make_search_documents_tool(
-    service: SearchDocumentsService,
-) -> Callable[[str], dict[str, Any]]:
-    """Factory: ADK function-tool cerrando sobre ``SearchDocumentsService``."""
+
+def make_search_documents_tool(search: SearchFn) -> Callable[[str], dict[str, Any]]:
+    """Factory framework-agnostic: cierra sobre una función de búsqueda.
+
+    La docstring de ``search_documents`` está pensada para el LLM; el cuerpo
+    no depende de ADK, LangChain ni similares.
+    """
 
     def search_documents(query: str) -> dict[str, Any]:
         """Search indexed technical documents for a topic.
@@ -22,7 +27,7 @@ def make_search_documents_tool(
         Args:
             query: A natural-language search query.
         """
-        hits = service.execute(query)
+        hits = search(query)
         return {"results": [_hit_to_dict(hit) for hit in hits]}
 
     return search_documents

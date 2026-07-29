@@ -1,8 +1,8 @@
 from RAG_Agent.application.search_documents_service.search_documents import SearchDocumentsService
 from RAG_Agent.domain.ports.reranker import RerankResult
+from RAG_Agent.domain.tools.search_documents import make_search_documents_tool
 from RAG_Agent.domain.value_objects.embedding import TextEmbedding
 from RAG_Agent.domain.value_objects.search_hit import RetrievedChunk
-from RAG_Agent.infrastructure.agent.tools.search_documents import make_search_documents_tool
 
 
 class _Embedder:
@@ -33,8 +33,10 @@ def test_make_search_documents_tool_formats_hits():
         embedder=_Embedder(),
         vector_store=_Store(),
         reranker=_Reranker(),
+        candidate_limit=10,
+        rerank_top_n=5,
     )
-    tool = make_search_documents_tool(service)
+    tool = make_search_documents_tool(service.execute)
     payload = tool("scope?")
     assert payload == {
         "results": [

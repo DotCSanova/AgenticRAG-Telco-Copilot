@@ -2,19 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
-from google.genai import types
 
+from RAG_Agent.application.chat_service.chat import ChatService
 from RAG_Agent.application.ingest_documents_service.ingest_document import IngestDocumentService
+from RAG_Agent.application.reset_memory_service.reset_memory import ResetMemoryService
 from RAG_Agent.config import settings
-from RAG_Agent.infrastructure.agent.agent import build_root_agent
-from RAG_Agent.infrastructure.agent.tools.search_documents import make_search_documents_tool
+from RAG_Agent.domain.exceptions import AgentEmptyResponseError
+from RAG_Agent.domain.tools.search_documents import make_search_documents_tool
+from RAG_Agent.infrastructure.agent.adk_runtime import build_adk_runtime
+from RAG_Agent.infrastructure.agent.sessions import build_session_service
 from RAG_Agent.infrastructure.api.models import (
     ChatRequest,
     ChatResponse,
@@ -37,43 +37,9 @@ from RAG_Agent.infrastructure.ingestion.native_pdf_pipeline import NativePdfPipe
 logger = logging.getLogger(__name__)
 
 
-def _final_text_from_event(event) -> str | None:
-    if not event.is_final_response():
-        return None
-    content = event.content
-    if content is None or not content.parts:
-        return None
-    texts = [part.text for part in content.parts if getattr(part, "text", None)]
-    if not texts:
-        return None
-    return "\n".join(texts)
-
-
-async def _ensure_session(
-    session_service: InMemorySessionService,
-    *,
-    app_name: str,
-    user_id: str,
-    session_id: str | None,
-):
-    if session_id:
-        existing = await session_service.get_session(
-            app_name=app_name,
-            user_id=user_id,
-            session_id=session_id,
-        )
-        if existing is not None:
-            return existing
-    return await session_service.create_session(
-        app_name=app_name,
-        user_id=user_id,
-        session_id=session_id or str(uuid.uuid4()),
-    )
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Composition root: ingest + search + ADK runner.
+    # Composition root: ingest + search + agentic chat/reset.
     parser = NativePdfPipeline(CascadingProfileResolver())
     chunker = build_chunker()
     embedder = build_embedder()
@@ -87,20 +53,27 @@ async def lifespan(app: FastAPI):
     )
 
     search_service = build_search_service(embedder=embedder, vector_store=vector_store)
-    search_tool = make_search_documents_tool(search_service)
-    root_agent = build_root_agent(tools=[search_tool])
-    session_service = InMemorySessionService()
+    search_tool = make_search_documents_tool(search_service.execute)
+    session_service = build_session_service()
     app_name = settings.agent_app_name
-    runner = Runner(
-        agent=root_agent,
-        app_name=app_name,
+    runtime = build_adk_runtime(
+        tools=[search_tool],
         session_service=session_service,
+        app_name=app_name,
     )
 
     app.state.search_service = search_service
     app.state.session_service = session_service
-    app.state.runner = runner
     app.state.agent_app_name = app_name
+    app.state.chat_service = ChatService(
+        runtime=runtime,
+        sessions=session_service,
+        app_name=app_name,
+    )
+    app.state.reset_memory_service = ResetMemoryService(
+        sessions=session_service,
+        app_name=app_name,
+    )
 
     logger.info(
         "Services ready (chunker=%s, sparse=%s, agent_model=%s)",
@@ -126,42 +99,25 @@ async def root():
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, http_request: Request):
-    runner: Runner = http_request.app.state.runner
-    session_service: InMemorySessionService = http_request.app.state.session_service
-    app_name: str = http_request.app.state.agent_app_name
-
-    session = await _ensure_session(
-        session_service,
-        app_name=app_name,
-        user_id=request.user_id,
-        session_id=request.session_id,
-    )
-
-    user_message = types.Content(
-        role="user",
-        parts=[types.Part(text=request.message)],
-    )
-    final_text = ""
+    service: ChatService = http_request.app.state.chat_service
     try:
-        async for event in runner.run_async(
+        result = await service.execute(
             user_id=request.user_id,
-            session_id=session.id,
-            new_message=user_message,
-        ):
-            text = _final_text_from_event(event)
-            if text is not None:
-                final_text = text
+            message=request.message,
+            session_id=request.session_id,
+        )
+    except AgentEmptyResponseError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        logger.exception("Chat failed for session=%s", session.id)
+        logger.exception("Chat failed for user=%s", request.user_id)
         raise HTTPException(status_code=500, detail=f"Chat failed: {exc}") from exc
 
-    if not final_text:
-        raise HTTPException(status_code=502, detail="Agent returned no final response")
-
     return ChatResponse(
-        message=final_text,
-        user_id=request.user_id,
-        session_id=session.id,
+        message=result.message,
+        user_id=result.user_id,
+        session_id=result.session_id,
     )
 
 
@@ -213,30 +169,22 @@ async def ingest_documents(request: IngestDocumentsRequest, http_request: Reques
 
 @app.post("/reset-memory", response_model=ResetMemoryResponse)
 async def reset_memory(request: ResetMemoryRequest, http_request: Request):
-    session_service: InMemorySessionService = http_request.app.state.session_service
-    app_name: str = http_request.app.state.agent_app_name
-
-    existing = await session_service.get_session(
-        app_name=app_name,
-        user_id=request.user_id,
-        session_id=request.session_id,
-    )
-    if existing is not None:
-        await session_service.delete_session(
-            app_name=app_name,
+    service: ResetMemoryService = http_request.app.state.reset_memory_service
+    try:
+        result = await service.execute(
             user_id=request.user_id,
             session_id=request.session_id,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Reset memory failed for session=%s", request.session_id)
+        raise HTTPException(status_code=500, detail=f"Reset memory failed: {exc}") from exc
 
-    await session_service.create_session(
-        app_name=app_name,
-        user_id=request.user_id,
-        session_id=request.session_id,
-    )
     return ResetMemoryResponse(
-        user_id=request.user_id,
-        session_id=request.session_id,
-        reset=True,
+        user_id=result.user_id,
+        session_id=result.session_id,
+        reset=result.reset,
     )
 
 

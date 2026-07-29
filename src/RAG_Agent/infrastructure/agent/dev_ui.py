@@ -13,6 +13,8 @@ from pathlib import Path
 
 from google.adk.cli.fast_api import get_fast_api_app
 
+from RAG_Agent.infrastructure.agent.sessions import resolve_sessions_db_url
+
 _AGENTS_DIR = str((Path(__file__).resolve().parent / "dev_agents"))
 
 app = get_fast_api_app(
@@ -20,6 +22,7 @@ app = get_fast_api_app(
     web=True,
     auto_create_session=True,
     allow_origins=["*"],
+    session_service_uri=resolve_sessions_db_url(),
 )
 
 if __name__ == "__main__":
