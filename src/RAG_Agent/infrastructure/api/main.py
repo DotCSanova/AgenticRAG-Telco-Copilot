@@ -24,35 +24,20 @@ from RAG_Agent.infrastructure.api.models import (
     ResetMemoryRequest,
     ResetMemoryResponse,
 )
-from RAG_Agent.infrastructure.composition import (
-    build_chunker,
-    build_embedder,
-    build_search_service,
-    build_vector_store,
-)
-from RAG_Agent.infrastructure.ingestion.cascading_profile_resolver import CascadingProfileResolver
+from RAG_Agent.infrastructure.composition.ingest import build_ingest_service
+from RAG_Agent.infrastructure.composition.serving import build_search_service
 from RAG_Agent.infrastructure.ingestion.exceptions import PDFParsingException, PDFValidationError
-from RAG_Agent.infrastructure.ingestion.native_pdf_pipeline import NativePdfPipeline
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Composition root: ingest + search + agentic chat/reset.
-    parser = NativePdfPipeline(CascadingProfileResolver())
-    chunker = build_chunker()
-    embedder = build_embedder()
-    vector_store = build_vector_store()
+    # Composition root (monolith transitional): ingest + search + chat/reset.
+    ingest_service = build_ingest_service()
+    app.state.ingest_service = ingest_service
 
-    app.state.ingest_service = IngestDocumentService(
-        parser=parser,
-        chunker=chunker,
-        embedder=embedder,
-        vector_store=vector_store,
-    )
-
-    search_service = build_search_service(embedder=embedder, vector_store=vector_store)
+    search_service = build_search_service()
     search_tool = make_search_documents_tool(search_service.execute)
     session_service = build_session_service()
     app_name = settings.agent_app_name

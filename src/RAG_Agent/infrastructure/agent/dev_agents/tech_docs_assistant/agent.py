@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from RAG_Agent.domain.tools.search_documents import make_search_documents_tool
 from RAG_Agent.infrastructure.agent.adk_runtime import build_root_agent
-from RAG_Agent.infrastructure.composition import build_search_service
+from RAG_Agent.infrastructure.composition.serving import build_search_service
 
 _search_service = build_search_service()
 root_agent = build_root_agent(tools=[make_search_documents_tool(_search_service.execute)])
