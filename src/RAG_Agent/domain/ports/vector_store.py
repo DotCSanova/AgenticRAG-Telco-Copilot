@@ -15,3 +15,6 @@ class VectorStore(Protocol):
 
     def search(self, embedding: TextEmbedding, *, limit: int) -> list[RetrievedChunk]:
         """Recupera candidatos por similitud (dense o hybrid RRF)."""
+
+    def delete_by_doc_id(self, doc_id: str) -> int:
+        """Borra points con payload ``doc_id``. Devuelve cuántos había (0 si ninguno)."""

@@ -109,3 +109,46 @@ def test_qdrant_search_hybrid_rrf():
     )
     assert len(hits) == 1
     assert hits[0].section_path == "4.5 Traffic steering"
+
+
+def test_qdrant_delete_by_doc_id_removes_only_matching_points():
+    client = QdrantClient(location=":memory:")
+    store = QdrantVectorStore(collection_name="test_delete", client=client, enable_sparse=False)
+    chunks = [
+        Chunk(id="doc1:c0", doc_id="doc1", text="keep-me-out"),
+        Chunk(id="doc1:c1", doc_id="doc1", text="keep-me-out-too"),
+        Chunk(id="doc2:c0", doc_id="doc2", text="stay"),
+    ]
+    embeddings = [
+        TextEmbedding(dense=(0.1, 0.0, 0.0)),
+        TextEmbedding(dense=(0.0, 0.1, 0.0)),
+        TextEmbedding(dense=(0.0, 0.0, 0.1)),
+    ]
+    store.upsert(chunks, embeddings)
+
+    assert store.delete_by_doc_id("doc1") == 2
+    assert client.get_collection("test_delete").points_count == 1
+    remaining = store.search(TextEmbedding(dense=(0.0, 0.0, 1.0)), limit=5)
+    assert len(remaining) == 1
+    assert remaining[0].doc_id == "doc2"
+
+
+def test_qdrant_delete_by_doc_id_missing_is_zero():
+    client = QdrantClient(location=":memory:")
+    store = QdrantVectorStore(collection_name="test_delete_miss", client=client, enable_sparse=False)
+    store.upsert(
+        [Chunk(id="doc1:c0", doc_id="doc1", text="x")],
+        [TextEmbedding(dense=(0.1, 0.2, 0.3))],
+    )
+    assert store.delete_by_doc_id("does-not-exist") == 0
+    assert client.get_collection("test_delete_miss").points_count == 1
+
+
+def test_qdrant_delete_by_doc_id_no_collection_is_zero():
+    client = QdrantClient(location=":memory:")
+    store = QdrantVectorStore(
+        collection_name="never_created",
+        client=client,
+        enable_sparse=False,
+    )
+    assert store.delete_by_doc_id("doc1") == 0

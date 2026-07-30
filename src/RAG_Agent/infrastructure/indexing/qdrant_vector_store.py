@@ -7,8 +7,11 @@ from typing import Any
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
+    FieldCondition,
+    Filter,
     Fusion,
     FusionQuery,
+    MatchValue,
     Modifier,
     PointStruct,
     Prefetch,
@@ -178,6 +181,37 @@ class QdrantVectorStore:
             )
 
         return [_point_to_retrieved(point) for point in response.points]
+
+    def delete_by_doc_id(self, doc_id: str) -> int:
+        if not doc_id:
+            raise ValueError("doc_id must be a non-empty string")
+        if not self._client.collection_exists(self._collection):
+            return 0
+
+        doc_filter = Filter(
+            must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))]
+        )
+        counted = self._client.count(
+            collection_name=self._collection,
+            count_filter=doc_filter,
+            exact=True,
+        )
+        deleted = int(counted.count)
+        if deleted == 0:
+            return 0
+
+        self._client.delete(
+            collection_name=self._collection,
+            points_selector=doc_filter,
+            wait=True,
+        )
+        logger.info(
+            "Deleted %d points with doc_id=%r from %s",
+            deleted,
+            doc_id,
+            self._collection,
+        )
+        return deleted
 
 
 def _point_to_retrieved(point: Any) -> RetrievedChunk:
