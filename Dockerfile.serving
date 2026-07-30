@@ -12,4 +12,6 @@ RUN uv sync --frozen --no-cache --no-dev --group serving
 # Pre-download BM25 so Cloud Run / local serving never hit HuggingFace on cold start.
 RUN uv run --no-sync python -c "from fastembed import SparseTextEmbedding; SparseTextEmbedding('Qdrant/bm25')"
 
-CMD ["/app/.venv/bin/fastapi", "run", "src/RAG_Agent/infrastructure/api/main_chat.py", "--port", "8080", "--host", "0.0.0.0"]
+ENV PATH="/app/.venv/bin:$PATH"
+
+CMD ["fastapi", "run", "src/RAG_Agent/infrastructure/api/main_chat.py", "--port", "8080", "--host", "0.0.0.0"]

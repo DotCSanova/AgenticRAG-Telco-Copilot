@@ -59,7 +59,7 @@ services:
       dockerfile: Dockerfile.serving
     command:
       [
-        "/app/.venv/bin/uvicorn",
+        "uvicorn",
         "RAG_Agent.infrastructure.agent.dev_ui:app",
         "--host",
         "0.0.0.0",

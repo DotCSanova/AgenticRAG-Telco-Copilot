@@ -16,5 +16,7 @@ RUN uv sync --frozen --no-cache --no-dev --no-default-groups --group ingest
 # Hybrid indexing needs BM25 at runtime; bake it into the image layer.
 RUN uv run --no-sync python -c "from fastembed import SparseTextEmbedding; SparseTextEmbedding('Qdrant/bm25')"
 
+ENV PATH="/app/.venv/bin:$PATH"
+
 # Override with: docker compose run --rm agent-ingest python scripts/ingest_local.py /data/doc.pdf
 CMD ["python", "scripts/ingest_local.py", "--help"]
