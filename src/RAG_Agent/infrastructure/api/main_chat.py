@@ -61,7 +61,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="RAG-Agent API",
-    description="Serving API for the technical-document RAG agent (chat, reset, eval stub).",
+    description="Serving API for the technical-document RAG agent for Telco Copilot.",
     docs_url="/docs",
     lifespan=lifespan,
 )
