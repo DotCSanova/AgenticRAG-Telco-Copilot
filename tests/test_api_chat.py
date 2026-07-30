@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from RAG_Agent.application.chat_service.chat import ChatService
 from RAG_Agent.config import settings
-from RAG_Agent.infrastructure.api.main import app
+from RAG_Agent.infrastructure.api.main_chat import app
 
 
 class _FakeRuntime:

@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 
 from RAG_Agent.application.chat_service.chat import ChatService
-from RAG_Agent.application.ingest_documents_service.ingest_document import IngestDocumentService
 from RAG_Agent.application.reset_memory_service.reset_memory import ResetMemoryService
 from RAG_Agent.config import settings
 from RAG_Agent.domain.exceptions import AgentEmptyResponseError
@@ -19,24 +16,16 @@ from RAG_Agent.infrastructure.api.models import (
     ChatRequest,
     ChatResponse,
     EvalRequest,
-    IngestDocumentsRequest,
-    IngestDocumentsResponse,
     ResetMemoryRequest,
     ResetMemoryResponse,
 )
-from RAG_Agent.infrastructure.composition.ingest import build_ingest_service
 from RAG_Agent.infrastructure.composition.serving import build_search_service
-from RAG_Agent.infrastructure.ingestion.exceptions import PDFParsingException, PDFValidationError
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Composition root (monolith transitional): ingest + search + chat/reset.
-    ingest_service = build_ingest_service()
-    app.state.ingest_service = ingest_service
-
     search_service = build_search_service()
     search_tool = make_search_documents_tool(search_service.execute)
     session_service = build_session_service()
@@ -61,8 +50,7 @@ async def lifespan(app: FastAPI):
     )
 
     logger.info(
-        "Services ready (chunker=%s, sparse=%s, agent_model=%s)",
-        settings.chunker,
+        "Serving ready (sparse=%s, agent_model=%s)",
         settings.qdrant_enable_sparse,
         settings.agent_model,
     )
@@ -109,47 +97,6 @@ async def chat(request: ChatRequest, http_request: Request):
 @app.post("/eval")
 async def eval_endpoint(request: EvalRequest):
     return {"message": "Eval request received"}
-
-
-@app.post("/ingest", response_model=IngestDocumentsResponse)
-async def ingest_documents(request: IngestDocumentsRequest, http_request: Request):
-    """Parsea un PDF. Con ``index=true`` también chunk/embed/upsert."""
-    path = Path(request.path).expanduser()
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail=f"PDF not found: {path}")
-
-    service: IngestDocumentService = http_request.app.state.ingest_service
-
-    try:
-        result = await asyncio.to_thread(service.execute, path, index=request.index)
-    except PDFValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except PDFParsingException as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except NotImplementedError as exc:
-        raise HTTPException(
-            status_code=501,
-            detail=f"Indexing stub not implemented yet: {exc}",
-        ) from exc
-    except Exception as exc:
-        logger.exception("Ingest failed for %s", path)
-        raise HTTPException(status_code=500, detail=f"Ingest failed: {exc}") from exc
-
-    document = result.canonical
-    extra = dict(document.metadata.extra)
-    extra.update(result.extra)
-    return IngestDocumentsResponse(
-        title=document.metadata.title,
-        profile_id=document.metadata.profile_id,
-        source_path=str(document.metadata.source_path),
-        parser=document.metadata.parser,
-        num_pages=int(extra.get("num_pages", len(document.pages))),
-        num_blocks=int(extra.get("num_blocks", len(document.blocks))),
-        num_sections=int(extra.get("num_sections", len(document.sections))),
-        indexed=result.indexed,
-        chunk_count=result.chunk_count,
-        extra=extra,
-    )
 
 
 @app.post("/reset-memory", response_model=ResetMemoryResponse)
