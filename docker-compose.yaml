@@ -30,7 +30,7 @@ services:
     container_name: RAG-Agent-api
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.serving
     ports:
       # Host 8000 → container 8080 (Dockerfile / Cloud Run default)
       - "8000:8080"
@@ -51,12 +51,12 @@ services:
     networks:
       - RAG-Agent-network
 
-  # ADK Dev UI (pruebas del agente). No es la API de producto.
+  # ADK Dev UI (pruebas del agente). Misma imagen serving, otro CMD.
   agent-dev-ui:
     container_name: RAG-Agent-dev-ui
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.serving
     command:
       [
         "/app/.venv/bin/uvicorn",
@@ -80,6 +80,27 @@ services:
         condition: service_started
     profiles:
       - dev
+    networks:
+      - RAG-Agent-network
+
+  # Ingest/index worker (no HTTP). Official local path for indexing a PDF:
+  #   docker compose run --rm agent-ingest python scripts/ingest_local.py /data/<file>.pdf
+  agent-ingest:
+    container_name: RAG-Agent-ingest
+    build:
+      context: .
+      dockerfile: Dockerfile.ingest
+    env_file:
+      - .env
+    environment:
+      QDRANT_URL: http://qdrant:6333
+    volumes:
+      - ./data:/data:ro
+    depends_on:
+      qdrant:
+        condition: service_started
+    profiles:
+      - ingest
     networks:
       - RAG-Agent-network
 

@@ -3324,19 +3324,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ollama"
-version = "0.6.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "httpx" },
-    { name = "pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/fc/72/5f12423b6b39ca8430fbe56f77fcf4ef60f63067c7c4a2e30e200ed9ec16/ollama-0.6.2.tar.gz", hash = "sha256:936d55daa684f474364c098611c933626f8d6c7d67065c5b7ae0c477b508b07f", size = 53145, upload-time = "2026-04-29T21:21:15.018Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c4/ab/d6722beeb2d10f7a3b9ff49375708904fde18f82b5609a0bc4aeb5996a4d/ollama-0.6.2-py3-none-any.whl", hash = "sha256:3ad7daab28e5a973445c36a73882a3ef698c2ebb00e21e308652741577509f7d", size = 15115, upload-time = "2026-04-29T21:21:13.794Z" },
-]
-
-[[package]]
 name = "omegaconf"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4714,30 +4701,11 @@ name = "rag-agent"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "asyncpg" },
     { name = "cohere" },
-    { name = "docling" },
-    { name = "fastapi", extra = ["standard"] },
     { name = "fastembed" },
-    { name = "google-adk" },
-    { name = "greenlet" },
-    { name = "ipykernel" },
-    { name = "litellm" },
-    { name = "loguru" },
-    { name = "ollama" },
-    { name = "pillow" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-    { name = "pymupdf" },
     { name = "qdrant-client" },
-    { name = "requests" },
-    { name = "sentence-transformers" },
-    { name = "sqlalchemy" },
-    { name = "torch", version = "2.6.0+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
-    { name = "torch", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
-    { name = "torchvision", version = "0.21.0+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
-    { name = "torchvision", version = "0.26.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
-    { name = "typer" },
 ]
 
 [package.dev-dependencies]
@@ -4747,33 +4715,34 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
+ingest = [
+    { name = "docling" },
+    { name = "pymupdf" },
+    { name = "sentence-transformers" },
+    { name = "torch", version = "2.6.0+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "torch", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "torchvision", version = "0.21.0+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "torchvision", version = "0.26.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+]
+notebooks = [
+    { name = "ipykernel" },
+]
+serving = [
+    { name = "asyncpg" },
+    { name = "fastapi", extra = ["standard"] },
+    { name = "google-adk" },
+    { name = "greenlet" },
+    { name = "litellm" },
+    { name = "sqlalchemy" },
+]
 
 [package.metadata]
 requires-dist = [
-    { name = "asyncpg", specifier = ">=0.29" },
     { name = "cohere", specifier = ">=7.0.8" },
-    { name = "docling", specifier = ">=2.93.0" },
-    { name = "fastapi", extras = ["standard"] },
     { name = "fastembed", specifier = ">=0.8.0" },
-    { name = "google-adk", specifier = ">=1.0.0" },
-    { name = "greenlet", specifier = ">=3.0" },
-    { name = "ipykernel" },
-    { name = "litellm", specifier = ">=1.0.0" },
-    { name = "loguru" },
-    { name = "ollama", specifier = ">=0.6.2" },
-    { name = "pillow", specifier = ">=12.2.0" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-    { name = "pymupdf", specifier = ">=1.27.2.3" },
     { name = "qdrant-client", specifier = ">=1.14.0" },
-    { name = "requests", specifier = ">=2.33.1" },
-    { name = "sentence-transformers", specifier = ">=5.6.1" },
-    { name = "sqlalchemy", specifier = ">=2.0" },
-    { name = "torch", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = ">=2.5.1" },
-    { name = "torch", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=2.5.1", index = "https://download.pytorch.org/whl/cu124" },
-    { name = "torchvision", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = ">=0.20.1" },
-    { name = "torchvision", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=0.20.1", index = "https://download.pytorch.org/whl/cu124" },
-    { name = "typer" },
 ]
 
 [package.metadata.requires-dev]
@@ -4782,6 +4751,24 @@ dev = [
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "ruff" },
+]
+ingest = [
+    { name = "docling", specifier = ">=2.93.0" },
+    { name = "pymupdf", specifier = ">=1.27.2.3" },
+    { name = "sentence-transformers", specifier = ">=5.6.1" },
+    { name = "torch", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = ">=2.5.1" },
+    { name = "torch", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=2.5.1", index = "https://download.pytorch.org/whl/cu124" },
+    { name = "torchvision", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = ">=0.20.1" },
+    { name = "torchvision", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=0.20.1", index = "https://download.pytorch.org/whl/cu124" },
+]
+notebooks = [{ name = "ipykernel" }]
+serving = [
+    { name = "asyncpg", specifier = ">=0.29" },
+    { name = "fastapi", extras = ["standard"] },
+    { name = "google-adk", specifier = ">=1.0.0" },
+    { name = "greenlet", specifier = ">=3.0" },
+    { name = "litellm", specifier = ">=1.0.0" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
 ]
 
 [[package]]
