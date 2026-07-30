@@ -39,6 +39,9 @@ class IngestDocumentService:
             msg = "index=True requiere chunker, embedder y vector_store inyectados"
             raise RuntimeError(msg)
 
+        doc_id = canonical.metadata.source_path.stem
+        deleted = self.vector_store.delete_by_doc_id(doc_id)
+
         chunks = self.chunker.chunk(canonical)
         embeddings = self.embedder.embed_doc([chunk.text for chunk in chunks])
         if len(embeddings) != len(chunks):
@@ -50,5 +53,5 @@ class IngestDocumentService:
             canonical=canonical,
             chunk_count=len(chunks),
             indexed=True,
-            extra={"upserted": str(upserted)},
+            extra={"upserted": str(upserted), "deleted": str(deleted), "doc_id": doc_id},
         )
