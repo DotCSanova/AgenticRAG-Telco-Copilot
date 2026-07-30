@@ -1,4 +1,4 @@
-"""Builders compartidos: embedder + vector store (sin Docling/chunkers)."""
+"""Shared composition builders: embedder and vector store (no Docling/chunkers)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ from RAG_Agent.infrastructure.indexing.hybrid_embedder import HybridEmbedder
 from RAG_Agent.infrastructure.indexing.qdrant_vector_store import QdrantVectorStore
 
 
-def build_dense_embedder():
+def build_dense_embedder() -> Embedder:
+    """Build the dense embedder selected by ``settings.dense_embedder``."""
     name = settings.dense_embedder.lower().strip()
     if name == "cohere":
         # Smaller batches + pacing for trial TPM limits on large docs.
@@ -20,6 +21,7 @@ def build_dense_embedder():
 
 
 def build_embedder() -> Embedder:
+    """Build dense or hybrid (dense + BM25) embedder from settings."""
     dense = build_dense_embedder()
     if settings.qdrant_enable_sparse:
         return HybridEmbedder(dense=dense, sparse=BM25Embedder())
@@ -27,6 +29,7 @@ def build_embedder() -> Embedder:
 
 
 def build_vector_store() -> VectorStore:
+    """Build the vector store selected by ``settings.vector_store_provider``."""
     name = settings.vector_store_provider.lower().strip()
     if name == "qdrant":
         return QdrantVectorStore(prefetch_limit=settings.retrieval_prefetch_limit)

@@ -2,11 +2,11 @@ from pydantic import BaseModel, Field
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1, description="Mensaje del usuario")
-    user_id: str = Field("default", description="Identificador de usuario para la sesión")
+    message: str = Field(..., min_length=1, description="User message")
+    user_id: str = Field("default", description="User id used for session scoping")
     session_id: str | None = Field(
         None,
-        description="Id de sesión; si falta o no existe, se crea una nueva",
+        description="Session id; if missing or unknown, a new session is created",
     )
 
 
@@ -17,7 +17,7 @@ class ChatResponse(BaseModel):
 
 
 class EvalRequest(BaseModel):
-    pass
+    """Reserved for a future evaluation endpoint."""
 
 
 class ResetMemoryRequest(BaseModel):

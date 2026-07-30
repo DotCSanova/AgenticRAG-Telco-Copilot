@@ -12,7 +12,7 @@ from RAG_Agent.domain.value_objects.canonical_document import CanonicalDocument
 
 @dataclass(frozen=True)
 class IngestResult:
-    """Resultado del caso de uso de ingesta."""
+    """Outcome of the ingest use case."""
 
     canonical: CanonicalDocument
     chunk_count: int = 0
@@ -22,7 +22,7 @@ class IngestResult:
 
 @dataclass(frozen=True)
 class IngestDocumentService:
-    """Caso de uso: parse → (opcional) chunk → embed → vector store."""
+    """Parse a PDF, optionally chunk → embed → upsert (idempotent by doc stem)."""
 
     parser: DocumentParser
     chunker: Chunker | None = None
@@ -30,13 +30,14 @@ class IngestDocumentService:
     vector_store: VectorStore | None = None
 
     def execute(self, path: Path | str, *, index: bool = False) -> IngestResult:
+        """Parse ``path``. With ``index=True``, delete existing stem chunks then upsert."""
         canonical = self.parser.parse(Path(path))
 
         if not index:
             return IngestResult(canonical=canonical, indexed=False)
 
         if self.chunker is None or self.embedder is None or self.vector_store is None:
-            msg = "index=True requiere chunker, embedder y vector_store inyectados"
+            msg = "index=True requires chunker, embedder, and vector_store to be injected"
             raise RuntimeError(msg)
 
         doc_id = canonical.metadata.source_path.stem

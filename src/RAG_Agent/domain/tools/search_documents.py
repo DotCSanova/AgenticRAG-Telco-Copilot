@@ -1,4 +1,4 @@
-"""Tool cruda de búsqueda documental (sin frameworks de agente)."""
+"""Framework-agnostic document search tool (no agent SDK imports)."""
 
 from __future__ import annotations
 
@@ -14,12 +14,12 @@ SearchFn = Callable[[str], list[SearchHit]]
 def make_search_documents_tool(
     search: SearchFn,
 ) -> Callable[[str], Awaitable[dict[str, Any]]]:
-    """Factory framework-agnostic: cierra sobre una función de búsqueda sync.
+    """Build an async tool that closes over a synchronous ``search`` callable.
 
-    La tool es ``async`` y ejecuta ``search`` en un thread para no bloquear el
-    event loop del agente (Cohere/Qdrant sync + posibles ``time.sleep``).
-    La docstring de ``search_documents`` está pensada para el LLM; el cuerpo
-    no depende de ADK, LangChain ni similares.
+    The returned tool runs ``search`` via ``asyncio.to_thread`` so Cohere/Qdrant
+    (and any pacing sleeps) do not block the agent event loop. The nested
+    ``search_documents`` docstring is written for the LLM; the body stays free
+    of ADK, LangChain, and similar frameworks.
     """
 
     async def search_documents(query: str) -> dict[str, Any]:

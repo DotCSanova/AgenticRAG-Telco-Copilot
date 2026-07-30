@@ -5,7 +5,6 @@ from __future__ import annotations
 import subprocess
 import sys
 
-
 _GUARD_SCRIPT = """
 from importlib import import_module
 import sys

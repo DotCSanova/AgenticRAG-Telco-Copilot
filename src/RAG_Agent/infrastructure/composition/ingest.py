@@ -24,10 +24,12 @@ __all__ = [
 
 
 def build_parser() -> DocumentParser:
+    """Build the native PDF → CanonicalDocument pipeline."""
     return NativePdfPipeline(CascadingProfileResolver())
 
 
 def build_chunker() -> Chunker:
+    """Build the chunker selected by ``settings.chunker`` (``section`` | ``semantic``)."""
     name = settings.chunker.lower().strip()
     if name == "section":
         return SectionChunker()
@@ -48,6 +50,7 @@ def build_ingest_service(
     embedder: Embedder | None = None,
     vector_store: VectorStore | None = None,
 ) -> IngestDocumentService:
+    """Wire parser + chunker + embedder + vector store for local/job ingest."""
     return IngestDocumentService(
         parser=parser or build_parser(),
         chunker=chunker or build_chunker(),

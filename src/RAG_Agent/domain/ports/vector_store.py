@@ -8,13 +8,13 @@ from RAG_Agent.domain.value_objects.search_hit import RetrievedChunk
 
 
 class VectorStore(Protocol):
-    """Persistencia de chunks + embeddings (dense / hybrid)."""
+    """Persistence for chunks and embeddings (dense / hybrid)."""
 
     def upsert(self, chunks: list[Chunk], embeddings: list[TextEmbedding]) -> int:
-        """Indexa pares chunk/embedding. Devuelve cuántos se upsertaron."""
+        """Upsert chunk/embedding pairs. Returns how many points were written."""
 
     def search(self, embedding: TextEmbedding, *, limit: int) -> list[RetrievedChunk]:
-        """Recupera candidatos por similitud (dense o hybrid RRF)."""
+        """Retrieve candidates by similarity (dense or hybrid RRF)."""
 
     def delete_by_doc_id(self, doc_id: str) -> int:
-        """Borra points con payload ``doc_id``. Devuelve cuántos había (0 si ninguno)."""
+        """Delete points whose payload ``doc_id`` matches. Returns prior count (0 if none)."""

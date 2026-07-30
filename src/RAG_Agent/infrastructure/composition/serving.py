@@ -19,6 +19,7 @@ __all__ = [
 
 
 def build_reranker() -> Reranker:
+    """Build the reranker selected by ``settings.reranker_provider``."""
     name = settings.reranker_provider.lower().strip()
     if name == "cohere":
         return CohereReranker()
@@ -33,6 +34,7 @@ def build_search_service(
     candidate_limit: int | None = None,
     rerank_top_n: int | None = None,
 ) -> SearchDocumentsService:
+    """Wire embed → vector search → rerank for the serving retrieval path."""
     return SearchDocumentsService(
         embedder=embedder or build_embedder(),
         vector_store=vector_store or build_vector_store(),

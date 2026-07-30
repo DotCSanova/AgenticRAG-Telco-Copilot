@@ -183,6 +183,7 @@ class QdrantVectorStore:
         return [_point_to_retrieved(point) for point in response.points]
 
     def delete_by_doc_id(self, doc_id: str) -> int:
+        """Delete all points for ``doc_id``. Returns how many existed before delete."""
         if not doc_id:
             raise ValueError("doc_id must be a non-empty string")
         if not self._client.collection_exists(self._collection):

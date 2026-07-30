@@ -1,3 +1,5 @@
+"""Chat serving FastAPI app: /chat, /reset-memory, /eval stub (no ingest)."""
+
 from __future__ import annotations
 
 import logging
@@ -59,7 +61,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="RAG-Agent API",
-    description="API del agente RAG sobre documentos técnicos.",
+    description="Serving API for the technical-document RAG agent (chat, reset, eval stub).",
     docs_url="/docs",
     lifespan=lifespan,
 )
