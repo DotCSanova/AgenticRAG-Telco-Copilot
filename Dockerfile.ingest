@@ -6,18 +6,6 @@ WORKDIR /app
 
 # Cloud Run Jobs / compose ingest: CPU torch (no NVIDIA in typical GCP Jobs).
 ENV UV_TORCH_BACKEND=cpu
-# OpenCV (Docling table models) needs these even headless.
-ENV QT_QPA_PLATFORM=offscreen
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        libxcb1 \
-        libgl1 \
-        libglib2.0-0 \
-        libsm6 \
-        libxext6 \
-        libxrender1 \
-    && rm -rf /var/lib/apt/lists/*
 
 COPY uv.lock pyproject.toml README.md ./
 COPY src ./src

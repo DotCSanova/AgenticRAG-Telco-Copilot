@@ -34,6 +34,8 @@ serving = [
 ingest = [
   "pymupdf>=1.27.2.3",
   "docling>=2.93.0",
+  # Docling pulls opencv-python; headless avoids X11/GL system libs in Docker.
+  "opencv-python-headless>=4.8.0",
   "torch>=2.5.1",
   "torchvision>=0.20.1",
   "sentence-transformers>=5.6.1",
@@ -64,6 +66,10 @@ select = [
 package = true
 # Local DX (3c): chat/tests by default; add `--group ingest` for host-side indexing.
 default-groups = ["serving", "dev"]
+# Docling depends on opencv-python; we ship opencv-python-headless instead (no libxcb/libGL).
+override-dependencies = [
+  "opencv-python; sys_platform == 'never'",
+]
 
 [tool.uv.sources]
 # Host GPU (Windows/Linux). Docker ingest overrides with UV_TORCH_BACKEND=cpu.
