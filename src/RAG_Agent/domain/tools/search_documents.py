@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from RAG_Agent.domain.value_objects.search_hit import SearchHit
@@ -10,14 +11,18 @@ from RAG_Agent.domain.value_objects.search_hit import SearchHit
 SearchFn = Callable[[str], list[SearchHit]]
 
 
-def make_search_documents_tool(search: SearchFn) -> Callable[[str], dict[str, Any]]:
-    """Factory framework-agnostic: cierra sobre una función de búsqueda.
+def make_search_documents_tool(
+    search: SearchFn,
+) -> Callable[[str], Awaitable[dict[str, Any]]]:
+    """Factory framework-agnostic: cierra sobre una función de búsqueda sync.
 
+    La tool es ``async`` y ejecuta ``search`` en un thread para no bloquear el
+    event loop del agente (Cohere/Qdrant sync + posibles ``time.sleep``).
     La docstring de ``search_documents`` está pensada para el LLM; el cuerpo
     no depende de ADK, LangChain ni similares.
     """
 
-    def search_documents(query: str) -> dict[str, Any]:
+    async def search_documents(query: str) -> dict[str, Any]:
         """Search indexed technical documents for a topic.
 
         Returns up to the configured rerank top-N passages with citations
@@ -27,7 +32,7 @@ def make_search_documents_tool(search: SearchFn) -> Callable[[str], dict[str, An
         Args:
             query: A natural-language search query.
         """
-        hits = search(query)
+        hits = await asyncio.to_thread(search, query)
         return {"results": [_hit_to_dict(hit) for hit in hits]}
 
     return search_documents

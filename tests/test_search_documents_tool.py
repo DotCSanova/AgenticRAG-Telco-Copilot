@@ -1,3 +1,5 @@
+import asyncio
+
 from RAG_Agent.application.search_documents_service.search_documents import SearchDocumentsService
 from RAG_Agent.domain.ports.reranker import RerankResult
 from RAG_Agent.domain.tools.search_documents import make_search_documents_tool
@@ -37,7 +39,7 @@ def test_make_search_documents_tool_formats_hits():
         rerank_top_n=5,
     )
     tool = make_search_documents_tool(service.execute)
-    payload = tool("scope?")
+    payload = asyncio.run(tool("scope?"))
     assert payload == {
         "results": [
             {
