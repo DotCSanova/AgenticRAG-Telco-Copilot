@@ -13,7 +13,7 @@ import logging
 import sys
 from pathlib import Path
 
-from RAG_Agent.infrastructure.composition.ingest import build_ingest_service
+from RAG_Agent.infrastructure.composition.ingest import run_ingest
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("ingest_local")
@@ -35,8 +35,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("PDF not found: %s", path)
         return 1
 
-    service = build_ingest_service()
-    result = service.execute(path, index=args.index)
+    result = run_ingest(path, index=args.index)
     logger.info(
         "Done: doc_id=%s indexed=%s chunk_count=%s deleted=%s upserted=%s title=%r",
         result.extra.get("doc_id", path.stem),

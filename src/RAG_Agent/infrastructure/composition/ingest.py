@@ -1,8 +1,13 @@
-"""Composition root for local/job ingest (Docling + chunkers; no ADK)."""
+"""Composition root for ingest (CLI + Cloud Run worker; Docling + chunkers; no ADK)."""
 
 from __future__ import annotations
 
-from RAG_Agent.application.ingest_documents_service.ingest_document import IngestDocumentService
+from pathlib import Path
+
+from RAG_Agent.application.ingest_documents_service.ingest_document import (
+    IngestDocumentService,
+    IngestResult,
+)
 from RAG_Agent.config import settings
 from RAG_Agent.domain.ports.chunker import Chunker
 from RAG_Agent.domain.ports.document_parser import DocumentParser
@@ -20,6 +25,7 @@ __all__ = [
     "build_ingest_service",
     "build_parser",
     "build_vector_store",
+    "run_ingest",
 ]
 
 
@@ -50,10 +56,15 @@ def build_ingest_service(
     embedder: Embedder | None = None,
     vector_store: VectorStore | None = None,
 ) -> IngestDocumentService:
-    """Wire parser + chunker + embedder + vector store for local/job ingest."""
+    """Wire parser + chunker + embedder + vector store for ingest."""
     return IngestDocumentService(
         parser=parser or build_parser(),
         chunker=chunker or build_chunker(),
         embedder=embedder or build_embedder(),
         vector_store=vector_store or build_vector_store(),
     )
+
+
+def run_ingest(path: Path | str, *, index: bool = True) -> IngestResult:
+    """Shared indexing entry for the local CLI and the Cloud Run ingest worker."""
+    return build_ingest_service().execute(Path(path), index=index)
