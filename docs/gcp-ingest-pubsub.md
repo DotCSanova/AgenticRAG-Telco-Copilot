@@ -195,11 +195,11 @@ Keep `/eval` on `main_chat`. Do not reintroduce monolith `main.py`.
 
 ### M1 — GCS download helper
 
-- [ ] Infra helper: download `bucket` + `object` to a temp file
-- [ ] Cleanup temp in `finally`
-- [ ] Auth via ADC (no keys in image)
-- [ ] `google-cloud-storage` in group `ingest`
-- [ ] Tests with fake storage client / recorded bytes
+- [x] Infra helper: download `bucket` + `object` to a temp file
+- [x] Cleanup temp in `finally`
+- [x] Auth via ADC (no keys in image)
+- [x] `google-cloud-storage` in group `ingest`
+- [x] Tests with fake storage client / recorded bytes
 
 **Done when:** given bucket+object, worker can materialize a local path for `run_ingest`.
 

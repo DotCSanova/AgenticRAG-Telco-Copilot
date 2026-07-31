@@ -39,6 +39,7 @@ ingest = [
   "torch>=2.5.1",
   "torchvision>=0.20.1",
   "sentence-transformers>=5.6.1",
+  "google-cloud-storage>=2.18.0",
 ]
 notebooks = [
   "ipykernel",
