@@ -4,6 +4,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_file_encoding="utf-8")
 
+    # When true (Cloud Run ingest), load Cohere/Qdrant secrets from Secret Manager.
+    use_secret_manager: bool = False
+    google_cloud_project: str | None = None
+
     # Perfil de hardware para ingest (hoy: local). Override fino opcional.
     ingest_profile: str = "local"
     ingest_pages_per_shard: int | None = None

@@ -83,7 +83,7 @@ services:
     networks:
       - RAG-Agent-network
 
-  # Ingest/index worker (no HTTP). Official local path for indexing a PDF:
+  # Ingest image (default CMD = Pub/Sub worker). Local CLI override:
   #   docker compose run --rm agent-ingest python scripts/ingest_local.py /data/<file>.pdf
   agent-ingest:
     container_name: RAG-Agent-ingest

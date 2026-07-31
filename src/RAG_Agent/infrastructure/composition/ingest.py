@@ -65,6 +65,12 @@ def build_ingest_service(
     )
 
 
-def run_ingest(path: Path | str, *, index: bool = True) -> IngestResult:
+def run_ingest(
+    path: Path | str,
+    *,
+    index: bool = True,
+    service: IngestDocumentService | None = None,
+) -> IngestResult:
     """Shared indexing entry for the local CLI and the Cloud Run ingest worker."""
-    return build_ingest_service().execute(Path(path), index=index)
+    ingest = service or build_ingest_service()
+    return ingest.execute(Path(path), index=index)

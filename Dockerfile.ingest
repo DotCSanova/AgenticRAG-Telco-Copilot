@@ -4,7 +4,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
-# Cloud Run Jobs / compose ingest: CPU torch (no NVIDIA in typical GCP Jobs).
+# Cloud Run ingest Service / compose: CPU torch (no NVIDIA in typical GCP).
 ENV UV_TORCH_BACKEND=cpu
 
 COPY uv.lock pyproject.toml README.md ./
@@ -18,5 +18,6 @@ RUN uv run --no-sync python -c "from fastembed import SparseTextEmbedding; Spars
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Override with: docker compose run --rm agent-ingest python scripts/ingest_local.py /data/doc.pdf
-CMD ["python", "scripts/ingest_local.py", "--help"]
+# Cloud Run Pub/Sub push worker. Override for local CLI:
+#   docker compose run --rm agent-ingest python scripts/ingest_local.py /data/doc.pdf
+CMD ["uvicorn", "RAG_Agent.infrastructure.api.main_ingest:app", "--host", "0.0.0.0", "--port", "8080"]

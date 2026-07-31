@@ -53,7 +53,8 @@ Upload / ops ──► GCS (docs)
 |---|---|
 | Entrypoint | `main_ingest.py` (minimal FastAPI app) |
 | Push path | **`POST /`** — same pattern as the reference Telco ingest service |
-| Health | **`GET /health`** (probes; not the push path) |
+| Health endpoint | **None** — Cloud Run TCP/startup on `$PORT` is enough for this single-purpose worker |
+| Handler style | Sync `POST /` (blocking download + ingest; `concurrency=1`) |
 | Pub/Sub client in app | **None.** App only receives push HTTP. No Publisher/Subscriber, no topic/subscription IDs in code |
 | Envelope | Standard Pub/Sub push JSON; GCS fields from **message attributes** |
 | Attribute fields | `bucketId`, `objectId`, `objectGeneration` (optional: `eventType`) |
@@ -167,7 +168,7 @@ Structured logs (minimum): `bucket`, `object`, `objectGeneration`, `doc_id`, `ch
 ```text
 src/RAG_Agent/
   infrastructure/
-    api/main_ingest.py           # GET /health, POST / push handler
+    api/main_ingest.py           # POST / push handler (sync)
     storage/…                    # GCS download helper (exact module name at impl time)
     composition/ingest.py        # build_ingest_service + run_ingest
 scripts/ingest_local.py          # thin CLI → run_ingest
@@ -207,13 +208,14 @@ Keep `/eval` on `main_chat`. Do not reintroduce monolith `main.py`.
 
 ### M2 — Pub/Sub push handler (Cloud Run Ingest Service)
 
-- [ ] `main_ingest.py`: lifespan warm + `GET /health` + `POST /`
-- [ ] Parse attributes → validate extension → Word 400 → PDF download → `run_ingest` → status codes above
-- [ ] Structured logs as in §2
-- [ ] Idempotent under redelivery (stem delete+upsert)
-- [ ] `fastapi` in group `ingest`
-- [ ] `Dockerfile.ingest` CMD → uvicorn `main_ingest` (CLI remains available via override)
-- [ ] Unit tests for envelope / extension gate / handler (no real GCP)
+- [x] `main_ingest.py`: lifespan warm + sync `POST /`
+- [x] Parse attributes → validate extension → Word 400 → PDF download → `run_ingest` → status codes above
+- [x] Structured logs as in §2
+- [x] Idempotent under redelivery (stem delete+upsert)
+- [x] `fastapi` in group `ingest`
+- [x] `Dockerfile.ingest` CMD → uvicorn `main_ingest` (CLI remains available via override)
+- [x] Unit tests for envelope / extension gate / handler (no real GCP)
+- [x] `USE_SECRET_MANAGER` → Secret Manager hydrate on ingest lifespan only
 
 **Done when:** a test push envelope (or real upload once wired) can drive indexing without touching chat.
 
