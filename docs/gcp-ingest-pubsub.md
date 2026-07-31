@@ -1,7 +1,8 @@
 # GCP ingest — Pub/Sub + GCS + Cloud Run Service
 
 Next phase after [serving-ingest-split.md](./serving-ingest-split.md).  
-Design north: [split-ingest-serving.md](./split-ingest-serving.md) §7.1.
+Design north: [split-ingest-serving.md](./split-ingest-serving.md) §7.1.  
+**API / process reference (canonical for operators and OpenAPI):** [ingest-api.md](./ingest-api.md).
 
 **Branch:** `feature/gcp-ingest-pubsub`  
 **Goal:** event-driven indexing in GCP without Docling in the chat service. Same application core as local CLI: `run_ingest(path)` → `IngestDocumentService` (delete-by-stem + upsert).
@@ -168,7 +169,7 @@ Structured logs (minimum): `bucket`, `object`, `objectGeneration`, `doc_id`, `ch
 ```text
 src/RAG_Agent/
   infrastructure/
-    api/main_ingest.py           # POST / push handler (sync)
+    api/main_ingest.py           # POST / push handler (sync); OpenAPI description ← docs/ingest-api.md
     storage/…                    # GCS download helper (exact module name at impl time)
     composition/ingest.py        # build_ingest_service + run_ingest
 scripts/ingest_local.py          # thin CLI → run_ingest

@@ -1,9 +1,14 @@
-"""Cloud Run ingest worker: Pub/Sub push → GCS download → run_ingest (no ADK)."""
+"""Cloud Run ingest worker: Pub/Sub push → GCS download → run_ingest (no ADK).
+
+Canonical process and HTTP contract: ``docs/ingest-api.md`` (also used as this
+app's OpenAPI description when the file is present in the image/repo).
+"""
 
 from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -21,6 +26,19 @@ from RAG_Agent.infrastructure.secrets.gcp_secrets import apply_ingest_secrets_fr
 from RAG_Agent.infrastructure.storage.gcs import download_gcs_object
 
 logger = logging.getLogger(__name__)
+
+_FALLBACK_DESCRIPTION = (
+    "Pub/Sub push worker: GCS object finalize → index into Qdrant. "
+    "Canonical reference: docs/ingest-api.md in the repository."
+)
+
+
+def _api_description() -> str:
+    """Load docs/ingest-api.md when packaged with the image or running from the repo."""
+    doc = Path(__file__).resolve().parents[4] / "docs" / "ingest-api.md"
+    if doc.is_file():
+        return doc.read_text(encoding="utf-8")
+    return _FALLBACK_DESCRIPTION
 
 
 def _is_gcs_not_found(exc: BaseException) -> bool:
@@ -41,7 +59,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="RAG-Agent Ingest",
-    description="Pub/Sub push worker: GCS object finalize → index into Qdrant.",
+    description=_api_description(),
     docs_url="/docs",
     lifespan=lifespan,
 )

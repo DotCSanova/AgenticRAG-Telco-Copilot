@@ -10,6 +10,7 @@ ENV UV_TORCH_BACKEND=cpu
 COPY uv.lock pyproject.toml README.md ./
 COPY src ./src
 COPY scripts ./scripts
+COPY docs/ingest-api.md ./docs/ingest-api.md
 
 RUN uv sync --frozen --no-cache --no-dev --no-default-groups --group ingest
 
