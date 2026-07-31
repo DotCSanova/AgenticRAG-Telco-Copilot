@@ -698,5 +698,5 @@ Orden recomendado; cada paso es verificable.
 
 1. ~~Cerrar preguntas serving/ingest split~~ — hecho (§7.2).
 2. ~~Ejecutar checklist §9~~ — merged 2026-07-30 ([serving-ingest-split.md](./serving-ingest-split.md)).
-3. Contrato Pub/Sub (#3) cuando se abra la oleada GCP.
-4. No planificar Cloud Tasks / aggregator hasta validar worker único.
+3. Contrato Pub/Sub (#3) — oleada GCP: [gcp-ingest-pubsub.md](./gcp-ingest-pubsub.md).
+4. No planificar Cloud Tasks / aggregator hasta validar worker único (Service + push).
