@@ -3,10 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from RAG_Agent.domain.value_objects.block import Block, BlockType, TableData
+from RAG_Agent.domain.value_objects.block import Block
 from RAG_Agent.domain.value_objects.page import Page
 from RAG_Agent.domain.value_objects.section import Section
-from RAG_Agent.domain.value_objects.table_groups import merge_table_group
 
 
 @dataclass(frozen=True)
@@ -51,15 +50,3 @@ class CanonicalDocument:
 
     def child_sections(self, parent_id: str) -> list[Section]:
         return [section for section in self.sections if section.parent_id == parent_id]
-
-    def table_group_blocks(self, group_id: str) -> list[Block]:
-        parts = [
-            block
-            for block in self.blocks.values()
-            if block.type == BlockType.TABLE
-            and block.metadata.get("table_group_id") == group_id
-        ]
-        return sorted(parts, key=lambda block: int(block.metadata.get("table_part_index", "0")))
-
-    def merged_table(self, group_id: str) -> TableData:
-        return merge_table_group(self.table_group_blocks(group_id))

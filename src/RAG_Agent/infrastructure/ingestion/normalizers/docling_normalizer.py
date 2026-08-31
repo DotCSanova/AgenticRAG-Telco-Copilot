@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import re
-from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +26,7 @@ from RAG_Agent.domain.doc_processing_rules.document_processing import (
     DocumentProcessingRules,
     DocumentProfile,
 )
+from RAG_Agent.domain.value_objects._block_utils import index_block_ids_by_page
 from RAG_Agent.domain.value_objects.block import (
     Block,
     BlockType,
@@ -34,14 +34,13 @@ from RAG_Agent.domain.value_objects.block import (
     ImageRef,
     TableData,
 )
+from RAG_Agent.domain.value_objects.block_pipeline import refine_block_sequence
 from RAG_Agent.domain.value_objects.canonical_document import (
     CanonicalDocument,
     DocumentMetadata,
 )
 from RAG_Agent.domain.value_objects.page import Page
 from RAG_Agent.domain.value_objects.section import Section
-from RAG_Agent.domain.value_objects.plantuml_groups import merge_plantuml_fragments
-from RAG_Agent.domain.value_objects.table_groups import link_table_continuations
 
 logger = logging.getLogger(__name__)
 
@@ -63,12 +62,19 @@ class DoclingNormalizer:
         profile: DocumentProfile,
         parser_name: str = "docling",
     ) -> CanonicalDocument:
+        """Map a Docling document to a canonical document via the shared block pipeline.
+
+        Args:
+            doc: Parser output (Docling tree).
+            source_path: Original PDF path stored in metadata.
+            profile: Family identity and processing rules.
+            parser_name: Value stored in ``metadata.parser``.
+
+        Returns:
+            Canonical document with refined blocks, pages, sections, and title.
+        """
         rules = profile.rules
-        blocks = rules.refine_blocks(
-            merge_plantuml_fragments(
-                link_table_continuations(self._extract_blocks(doc, rules))
-            )
-        )
+        blocks = refine_block_sequence(self._extract_blocks(doc, rules), rules=rules)
         pages = self._build_pages(doc, blocks)
         sections = self.build_sections(blocks, rules=rules)
         title = self.resolve_title(
@@ -99,7 +105,6 @@ class DoclingNormalizer:
         rules: DocumentProcessingRules,
     ) -> list[Block]:
         blocks: list[Block] = []
-        skip_until_level: int | None = None
         order = 0
 
         for element, _depth in doc.iterate_items():
@@ -116,16 +121,6 @@ class DoclingNormalizer:
                     extracted_level = int(element.level or 1)
                 level = rules.infer_heading_level(title, extracted_level=extracted_level)
 
-                if rules.is_removable_section(title):
-                    skip_until_level = level
-                    continue
-
-                if skip_until_level is not None:
-                    if level <= skip_until_level:
-                        skip_until_level = None
-                    else:
-                        continue
-
                 block = self._make_text_block(
                     element=element,
                     block_type=BlockType.HEADING,
@@ -135,9 +130,6 @@ class DoclingNormalizer:
                 )
                 blocks.append(block)
                 order += 1
-                continue
-
-            if skip_until_level is not None:
                 continue
 
             block = self._element_to_block(element, order=order, doc=doc, rules=rules)
@@ -299,11 +291,7 @@ class DoclingNormalizer:
         return TableData(headers=headers, rows=body)
 
     def _build_pages(self, doc: DoclingDocument, blocks: list[Block]) -> list[Page]:
-        by_page: dict[int, list[str]] = defaultdict(list)
-        for block in blocks:
-            if block.page is None:
-                continue
-            by_page[block.page].append(block.id)
+        by_page = index_block_ids_by_page(blocks)
 
         doc_pages = getattr(doc, "pages", {}) or {}
         page_numbers = sorted(set(by_page) | {int(key) for key in doc_pages})

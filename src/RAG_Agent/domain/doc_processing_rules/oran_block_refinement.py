@@ -3,7 +3,8 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 
-from RAG_Agent.domain.value_objects.block import Block, BlockType, ImageRef
+from RAG_Agent.domain.value_objects.block import Block, BlockType
+from RAG_Agent.domain.value_objects.figure_groups import looks_like_figure_caption
 
 # Títulos de sección O-RAN/ETSI sin numeración (front matter habitual).
 # Se promueven aunque Docling no los marque como heading.
@@ -43,8 +44,6 @@ _NUMERIC_SECTION_HEADING = re.compile(
 _ANNEX_SECTION_HEADING = re.compile(
     r"^(?P<num>[A-Z](?:\.\d+)+)\s+(?P<title>\S.+)$"
 )
-# Caption de figura — nunca heading de sección
-_FIGURE_CAPTION = re.compile(r"^figure\s+\d", re.IGNORECASE)
 # 1) Label…  — marcador de lista enumerada, NO sección
 _ENUMERATED_LIST_MARKER = re.compile(r"^\d+\)\s*\S")
 
@@ -89,7 +88,7 @@ def is_retained_unnumbered_heading(text: str) -> bool:
     Solo debe usarse para no degradar un heading ya detectado (no promoción).
     """
     normalized = _normalize_named_title(text)
-    if not normalized or _FIGURE_CAPTION.match(normalized):
+    if not normalized or looks_like_figure_caption(normalized):
         return False
     if normalized in _RETAIN_HEADING_EXACT:
         return True
@@ -165,45 +164,13 @@ def _assign_list_levels(blocks: list[Block]) -> list[Block]:
     return result
 
 
-def looks_like_figure_caption(text: str) -> bool:
-    """True para ``Figure 4.1.3-1: …`` (caption O-RAN/ETSI tras una imagen)."""
-    return bool(_FIGURE_CAPTION.match(_first_line(text)))
-
-
-def _attach_figure_captions(blocks: list[Block]) -> list[Block]:
-    """Si IMAGE va seguido de párrafo ``Figure…``, lo mueve a ``image.caption`` y elimina el párrafo."""
-    if not blocks:
-        return blocks
-
-    result: list[Block] = []
-    index = 0
-    while index < len(blocks):
-        block = blocks[index]
-        if block.type == BlockType.IMAGE and index + 1 < len(blocks):
-            nxt = blocks[index + 1]
-            caption = (nxt.text or "").strip()
-            if (
-                nxt.type == BlockType.PARAGRAPH
-                and caption
-                and looks_like_figure_caption(caption)
-            ):
-                image = block.image or ImageRef()
-                result.append(replace(block, image=replace(image, caption=caption)))
-                index += 2
-                continue
-        result.append(block)
-        index += 1
-    return result
-
-
 def refine_oran_blocks(blocks: list[Block]) -> list[Block]:
     """Corrige headings/listas mal clasificados por Docling (reglas estructurales O-RAN).
 
     1. Conserva/promueve headings de sección numerada, anexo ``A.1`` o título nombrado.
     2. Conserva (sin promover) headings ya detectados tipo Annex / Change history / …
     3. Degrada falsos headings: ``N)`` / etiquetas ``…:`` → list_item; figuras y resto → paragraph.
-    4. Adjunta párrafos ``Figure…`` como ``image.caption`` y los elimina como block.
-    5. Asigna ``level`` a list_items por indentación + etiquetas padre.
+    4. Asigna ``level`` a list_items por indentación + etiquetas padre.
     """
     refined: list[Block] = []
 
@@ -245,5 +212,4 @@ def refine_oran_blocks(blocks: list[Block]) -> list[Block]:
 
         refined.append(block)
 
-    refined = _attach_figure_captions(refined)
     return _assign_list_levels(refined)

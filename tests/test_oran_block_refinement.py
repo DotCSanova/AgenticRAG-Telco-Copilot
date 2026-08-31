@@ -173,7 +173,7 @@ def test_refine_blocks_retains_annex_and_history_only_if_already_heading():
     assert refined[4].type == BlockType.HEADING
 
 
-def test_refine_blocks_attaches_figure_caption_to_image_and_drops_paragraph():
+def test_refine_blocks_demotes_figure_heading_and_does_not_attach_caption():
     blocks = [
         Block(
             id="img",
@@ -185,26 +185,17 @@ def test_refine_blocks_attaches_figure_caption_to_image_and_drops_paragraph():
         ),
         Block(
             id="cap",
-            type=BlockType.PARAGRAPH,
+            type=BlockType.HEADING,
             order=1,
             page=11,
             text="Figure 4.1.3-1: Dynamic handover management for V2X use case",
-            bbox=_bbox(56.0),
-        ),
-        Block(
-            id="p",
-            type=BlockType.PARAGRAPH,
-            order=2,
-            page=11,
-            text="Following prose remains.",
+            level=1,
             bbox=_bbox(56.0),
         ),
     ]
     refined = refine_oran_blocks(blocks)
-    assert len(refined) == 2
     assert refined[0].type == BlockType.IMAGE
     assert refined[0].image is not None
-    assert refined[0].image.caption == (
-        "Figure 4.1.3-1: Dynamic handover management for V2X use case"
-    )
-    assert refined[1].id == "p"
+    assert refined[0].image.caption is None
+    assert refined[1].type == BlockType.PARAGRAPH
+    assert refined[1].id == "cap"

@@ -109,6 +109,7 @@ class NativePdfPipeline:
                 source_path=path,
                 profile_id=profile.rules.profile_id,
                 parser_name="native_pdf_docling",
+                rules=profile.rules,
                 build_sections=lambda blocks: self._normalizer.build_sections(
                     blocks, rules=profile.rules
                 ),

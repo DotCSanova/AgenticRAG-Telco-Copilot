@@ -7,11 +7,12 @@ from RAG_Agent.domain.doc_processing_rules.default_document_rules import (
     DefaultProfileResolver,
 )
 from RAG_Agent.domain.doc_processing_rules.oran_document_rules import (
+    ORAN_RULES_REGISTRY,
     OranDocumentId,
     OranDocumentRules,
     OranProfileResolver,
 )
-from RAG_Agent.domain.value_objects.block import Block, BlockType
+from RAG_Agent.domain.value_objects.block import Block, BlockType, BoundingBox, TableData
 from RAG_Agent.domain.value_objects.canonical_document import (
     CanonicalDocument,
     DocumentMetadata,
@@ -202,6 +203,7 @@ def test_merge_canonical_shards_page_offset():
         source_path=Path("data/doc.pdf"),
         profile_id="oran_default",
         parser_name="native_pdf_docling",
+        rules=rules,
         build_sections=lambda blocks: normalizer.build_sections(blocks, rules=rules),
         resolve_title=lambda sections, blocks, hint: normalizer.resolve_title(
             sections, blocks, hint, rules=rules
@@ -216,3 +218,140 @@ def test_merge_canonical_shards_page_offset():
     assert merged.blocks["block_3"].page == 52
     assert {page.number for page in merged.pages} == {1, 51, 52}
     assert any(section.title == "Scope" for section in merged.sections)
+
+
+def test_merge_canonical_shards_collapses_split_table_and_indexes_both_pages():
+    bbox_a = BoundingBox(x0=50, y0=70, x1=540, y1=230)
+    bbox_b = BoundingBox(x0=50, y0=380, x1=540, y1=760)
+    shard0 = _doc(
+        [
+            Block(
+                id="block_0",
+                type=BlockType.TABLE,
+                order=0,
+                page=1,
+                table=TableData(
+                    headers=["A", "B"],
+                    rows=[["keep", "1"]],
+                    caption="Table 1-1 Demo",
+                ),
+                bbox=bbox_a,
+                source_ref="#/tables/0",
+            )
+        ],
+        [Page(number=1, block_ids=["block_0"], width=100, height=200)],
+    )
+    shard1 = _doc(
+        [
+            Block(
+                id="block_0",
+                type=BlockType.TABLE,
+                order=0,
+                page=1,
+                table=TableData(headers=["0", "1"], rows=[["", "2"]]),
+                bbox=bbox_b,
+                source_ref="#/tables/1",
+            )
+        ],
+        [Page(number=1, block_ids=["block_0"], width=100, height=200)],
+    )
+
+    merged = merge_canonical_shards(
+        [(0, shard0), (1, shard1)],
+        source_path=Path("data/doc.pdf"),
+        profile_id="default",
+        parser_name="native_pdf_docling",
+        rules=DEFAULT_DOCUMENT_RULES,
+        build_sections=lambda blocks: [],
+        resolve_title=lambda sections, blocks, hint: hint,
+        title_hint="hint",
+    )
+
+    tables = [
+        block for block in merged.blocks.values() if block.type == BlockType.TABLE
+    ]
+    assert len(tables) == 1
+    table_block = tables[0]
+    assert table_block.table is not None
+    assert table_block.table.rows == [["keep", "1"], ["keep", "2"]]
+    assert table_block.page == 1
+    assert table_block.page_numbers() == (1, 2)
+    assert [span.page for span in table_block.pdf_layout()] == [1, 2]
+    assert table_block.pdf_layout()[1].bbox == bbox_b
+    page1 = next(page for page in merged.pages if page.number == 1)
+    page2 = next(page for page in merged.pages if page.number == 2)
+    assert table_block.id in page1.block_ids
+    assert table_block.id in page2.block_ids
+
+
+def test_merge_canonical_shards_drops_list_of_figures_split_across_shards():
+    oran = ORAN_RULES_REGISTRY.get("oran_default")
+    normalizer = DoclingNormalizer()
+    shard0 = _doc(
+        [
+            Block(
+                id="block_0",
+                type=BlockType.PARAGRAPH,
+                order=0,
+                page=1,
+                text="List of figures",
+            ),
+            Block(
+                id="block_1",
+                type=BlockType.PARAGRAPH,
+                order=1,
+                page=1,
+                text="Figure 1-1 Architecture",
+            ),
+        ],
+        [Page(number=1, block_ids=["block_0", "block_1"])],
+    )
+    shard1 = _doc(
+        [
+            Block(
+                id="block_0",
+                type=BlockType.PARAGRAPH,
+                order=0,
+                page=1,
+                text="Figure 1-2 Interfaces",
+            ),
+            Block(
+                id="block_1",
+                type=BlockType.PARAGRAPH,
+                order=1,
+                page=1,
+                text="1 Scope",
+            ),
+            Block(
+                id="block_2",
+                type=BlockType.PARAGRAPH,
+                order=2,
+                page=1,
+                text="This document specifies scope.",
+            ),
+        ],
+        [Page(number=1, block_ids=["block_0", "block_1", "block_2"])],
+    )
+
+    merged = merge_canonical_shards(
+        [(0, shard0), (1, shard1)],
+        source_path=Path("data/doc.pdf"),
+        profile_id="oran_default",
+        parser_name="native_pdf_docling",
+        rules=oran,
+        build_sections=lambda blocks: normalizer.build_sections(blocks, rules=oran),
+        resolve_title=lambda sections, blocks, hint: normalizer.resolve_title(
+            sections, blocks, hint, rules=oran
+        ),
+        title_hint="CE",
+    )
+
+    texts = [
+        block.text
+        for block in sorted(merged.blocks.values(), key=lambda item: item.order)
+    ]
+    assert "List of figures" not in texts
+    assert "Figure 1-1 Architecture" not in texts
+    assert "Figure 1-2 Interfaces" not in texts
+    assert "1 Scope" in texts
+    assert any(section.title == "1 Scope" for section in merged.sections)

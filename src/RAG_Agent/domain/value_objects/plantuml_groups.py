@@ -3,8 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 
-from RAG_Agent.domain.value_objects._block_utils import renumber_blocks
-from RAG_Agent.domain.value_objects.block import Block, BlockType
+from RAG_Agent.domain.value_objects.block import Block, BlockType, LayoutSpan
 
 _START = "@startuml"
 _END = "@enduml"
@@ -147,25 +146,34 @@ def _merge_group(group: list[Block]) -> Block:
     if len(group) > 1:
         metadata["merged_parts"] = str(len(group))
 
+    spans = ()
+    if len(group) > 1:
+        spans = tuple(
+            LayoutSpan(page=part.page, bbox=part.bbox, source_ref=part.source_ref)
+            for part in group
+        )
+
     return replace(
         first,
         type=BlockType.CODE,
         page=page_start,
         text=text,
         metadata=metadata,
-        # Conservar bbox/source del inicio (página de cita).
         bbox=first.bbox,
         source_ref=first.source_ref,
+        layout_spans=spans,
     )
 
 
 def merge_plantuml_fragments(blocks: list[Block]) -> list[Block]:
     """Fusiona fragments consecutivos @startuml…@enduml en un único block CODE.
 
-    - ``page`` = página del primer fragment (donde empieza el diagrama).
+    - ``page`` / ``bbox`` / ``source_ref`` = primer fragmento (cita).
+    - ``layout_spans`` = un rectángulo por fragmento si cruza bloques/páginas.
     - ``metadata.page_end`` / ``continued`` si cruza páginas.
     - ``metadata.language`` = ``plantuml``.
     Incluye párrafos PlantUML inmediatamente anteriores al ``@startuml`` (p. ej. ``Box ...``).
+    Does not re-number ids; ``refine_block_sequence`` does that once.
     """
     if not blocks:
         return []
@@ -209,4 +217,4 @@ def merge_plantuml_fragments(blocks: list[Block]) -> list[Block]:
         result.append(blocks[index])
         index += 1
 
-    return renumber_blocks(result)
+    return result
