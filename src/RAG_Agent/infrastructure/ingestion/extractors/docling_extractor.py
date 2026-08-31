@@ -10,11 +10,13 @@ from docling.datamodel.pipeline_options import (
     AcceleratorDevice,
     AcceleratorOptions,
     PdfPipelineOptions,
+    TableFormerMode,
 )
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.types.doc import DoclingDocument
 
 from RAG_Agent.infrastructure.ingestion.exceptions import PDFParsingException, PDFValidationError
+from RAG_Agent.infrastructure.ingestion.ingest_profile import LOCAL
 
 logger = logging.getLogger(__name__)
 
@@ -26,21 +28,31 @@ class DoclingExtractor:
     documents are split by ``NativePdfPipeline`` via ``page_range``; this class
     does not reject a file solely because ``page_count`` is large when a range
     is provided.
+
+    Args:
+        layout_batch_size: Pages per layout-model forward pass.
+        table_batch_size: Tables per TableFormer forward pass.
+        table_former_mode: TableFormer quality. Pin ``ACCURATE`` so version
+            upgrades cannot silently switch.
     """
 
     def __init__(
         self,
-        max_pages: int = 50,
-        max_file_size_mb: int = 200,
+        max_pages: int = LOCAL.pages_per_shard,
+        max_file_size_mb: int = LOCAL.max_file_size_mb,
         do_ocr: bool = False,
         do_table_structure: bool = True,
+        layout_batch_size: int = LOCAL.layout_batch_size,
+        table_batch_size: int = LOCAL.table_batch_size,
+        table_former_mode: TableFormerMode | str = LOCAL.table_former_mode,
     ) -> None:
         pipeline_options = PdfPipelineOptions(
             do_table_structure=do_table_structure,
             do_ocr=do_ocr,
-            layout_batch_size=4,
-            table_batch_size=2,
+            layout_batch_size=layout_batch_size,
+            table_batch_size=table_batch_size,
         )
+        pipeline_options.table_structure_options.mode = TableFormerMode(table_former_mode)
 
         if torch.cuda.is_available():
             logger.info("GPU detected: %s", torch.cuda.get_device_name(0))
@@ -51,6 +63,7 @@ class DoclingExtractor:
         else:
             logger.warning("Running Docling on CPU; conversion may be slow")
 
+        self._pipeline_options = pipeline_options
         self._converter = DocumentConverter(
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)},
         )

@@ -54,6 +54,9 @@ class NativePdfPipeline:
             max_pages=self._hardware.pages_per_shard,
             max_file_size_mb=self._hardware.max_file_size_mb,
             do_ocr=False,
+            layout_batch_size=self._hardware.layout_batch_size,
+            table_batch_size=self._hardware.table_batch_size,
+            table_former_mode=self._hardware.table_former_mode,
         )
         self._normalizer = normalizer or DoclingNormalizer()
 

@@ -98,6 +98,39 @@ def test_local_ingest_profile_defaults():
     assert profile.name == "local"
     assert profile.pages_per_shard == 50
     assert profile.max_file_size_mb == 200
+    assert profile.layout_batch_size == 4
+    assert profile.table_batch_size == 2
+    assert profile.table_former_mode == "accurate"
+
+
+def test_cloud_ingest_profile_same_ceilings_smaller_batches():
+    local = get_ingest_profile("local")
+    cloud = get_ingest_profile("cloud")
+    assert cloud.name == "cloud"
+    assert cloud.pages_per_shard == local.pages_per_shard == 50
+    assert cloud.max_file_size_mb == local.max_file_size_mb == 200
+    assert cloud.table_former_mode == "accurate"
+    assert cloud.layout_batch_size == 2
+    assert cloud.table_batch_size == 1
+    assert cloud.layout_batch_size < local.layout_batch_size
+    assert cloud.table_batch_size < local.table_batch_size
+
+
+def test_unknown_ingest_profile_raises():
+    with pytest.raises(ValueError, match="Unknown ingest profile"):
+        get_ingest_profile("does-not-exist")
+
+
+def test_pages_per_shard_override_does_not_change_batches(monkeypatch):
+    from RAG_Agent.config import settings
+
+    monkeypatch.setattr(settings, "ingest_pages_per_shard", 10)
+    profile = get_ingest_profile("local")
+    assert profile.pages_per_shard == 10
+    assert profile.layout_batch_size == 4
+    assert profile.table_batch_size == 2
+    assert profile.table_former_mode == "accurate"
+    assert profile.max_file_size_mb == 200
 
 
 def test_resolve_title_prefers_cover_page_over_introduction():
@@ -589,3 +622,52 @@ def test_docling_page_range_keeps_original_folio(tmp_path: Path):
     block_pages = {block.page for block in canonical.blocks.values() if block.page is not None}
     if block_pages:
         assert block_pages == {2}
+
+
+def test_extractor_pipeline_options_come_from_constructor_knobs():
+    pytest.importorskip("docling")
+    from docling.datamodel.pipeline_options import TableFormerMode
+
+    from RAG_Agent.infrastructure.ingestion.extractors.docling_extractor import (
+        DoclingExtractor,
+    )
+    from RAG_Agent.infrastructure.ingestion.ingest_profile import LOCAL
+
+    default = DoclingExtractor()._pipeline_options
+    assert default.layout_batch_size == LOCAL.layout_batch_size
+    assert default.table_batch_size == LOCAL.table_batch_size
+    assert default.table_structure_options.mode == TableFormerMode.ACCURATE
+
+    options = DoclingExtractor(
+        layout_batch_size=3,
+        table_batch_size=1,
+        table_former_mode="accurate",
+    )._pipeline_options
+    assert options.layout_batch_size == 3
+    assert options.table_batch_size == 1
+    assert options.table_structure_options.mode == TableFormerMode.ACCURATE
+
+
+def test_pipeline_wires_hardware_knobs_into_extractor():
+    pytest.importorskip("docling")
+    from docling.datamodel.pipeline_options import TableFormerMode
+
+    from RAG_Agent.infrastructure.ingestion.ingest_profile import IngestHardwareProfile
+    from RAG_Agent.infrastructure.ingestion.native_pdf_pipeline import NativePdfPipeline
+
+    hardware = IngestHardwareProfile(
+        name="test",
+        pages_per_shard=7,
+        max_file_size_mb=12,
+        layout_batch_size=3,
+        table_batch_size=1,
+        table_former_mode="accurate",
+    )
+    pipeline = NativePdfPipeline(DefaultProfileResolver(), hardware=hardware)
+    extractor = pipeline._extractor
+    options = extractor._pipeline_options
+    assert extractor._max_pages == 7
+    assert extractor._max_file_size_bytes == 12 * 1024 * 1024
+    assert options.layout_batch_size == 3
+    assert options.table_batch_size == 1
+    assert options.table_structure_options.mode == TableFormerMode.ACCURATE

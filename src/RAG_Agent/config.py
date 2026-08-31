@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     use_secret_manager: bool = False
     google_cloud_project: str | None = None
 
-    # Perfil de hardware para ingest (hoy: local). Override fino opcional.
+    # Hardware ingest profile name (local | cloud). Optional page-shard override.
     ingest_profile: str = "local"
     ingest_pages_per_shard: int | None = None
     chunker: str = "semantic"  # section | semantic
