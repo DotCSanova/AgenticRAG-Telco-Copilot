@@ -145,6 +145,7 @@ class OranDocumentRules(BaseDocumentRules):
     preprocess_options: PreprocessOptions = field(default_factory=lambda: _ORAN_PREPROCESS)
     generic_doc_titles: frozenset[str] = field(default_factory=lambda: _ORAN_GENERIC_DOC_TITLES)
     title_boilerplate_pattern: str = _ORAN_TITLE_BOILERPLATE_PATTERN
+    cover_title_joined_max_len: int = 240
     noise_paragraph_chars: frozenset[str] = field(
         default_factory=lambda: _ORAN_NOISE_PARAGRAPH_CHARS
     )

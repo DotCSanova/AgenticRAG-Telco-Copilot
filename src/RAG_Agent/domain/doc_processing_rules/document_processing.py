@@ -14,8 +14,6 @@ class PageLayoutThresholds:
 
     header_top_ratio: float = 0.15
     footer_bottom_ratio: float = 0.85
-    title_zone_top: float = 0.20
-    title_zone_bottom: float = 0.80
 
 
 @dataclass(frozen=True)
