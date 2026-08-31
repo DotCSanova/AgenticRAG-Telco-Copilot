@@ -53,6 +53,11 @@ notebooks = [
 # Example override: relax a rule for the entire project (uncomment if needed).
 # rules.TY015 = "warn"  # For invalid-argument-type, warn instead of error.
 
+[tool.pytest.ini_options]
+markers = [
+    "integration: tests that run Docling convert (not part of default fast CI)",
+]
+
 [tool.ruff]
 line-length = 120
 

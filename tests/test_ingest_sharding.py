@@ -355,3 +355,237 @@ def test_merge_canonical_shards_drops_list_of_figures_split_across_shards():
     assert "Figure 1-2 Interfaces" not in texts
     assert "1 Scope" in texts
     assert any(section.title == "1 Scope" for section in merged.sections)
+
+
+def _write_n_page_pdf(path: Path, page_count: int) -> Path:
+    fitz = pytest.importorskip("fitz")
+    doc = fitz.open()
+    for index in range(page_count):
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((72, 72), f"Unique body text for folio {index + 1}")
+    doc.save(path)
+    doc.close()
+    return path
+
+
+class _LimitsExtractor:
+    """DoclingExtractor stand-in that only runs ``_validate_pdf`` / ``extract`` wiring."""
+
+    def __init__(self, max_pages: int = 2, max_file_size_mb: int = 200) -> None:
+        from RAG_Agent.infrastructure.ingestion.extractors.docling_extractor import (
+            DoclingExtractor,
+        )
+
+        self._impl = DoclingExtractor.__new__(DoclingExtractor)
+        self._impl._max_pages = max_pages
+        self._impl._max_file_size_bytes = max_file_size_mb * 1024 * 1024
+        self.convert_calls: list[tuple[Path, tuple[int, int] | None, int]] = []
+
+        def _convert_file(
+            pdf_path: Path,
+            *,
+            page_range: tuple[int, int] | None = None,
+            page_count: int,
+        ):
+            self.convert_calls.append((Path(pdf_path), page_range, page_count))
+            return object()
+
+        self._impl._convert_file = _convert_file  # type: ignore[method-assign]
+
+    def _validate_pdf(self, pdf_path: Path, page_range: tuple[int, int] | None = None) -> int:
+        return self._impl._validate_pdf(pdf_path, page_range=page_range)
+
+    def extract(self, pdf_path: Path, *, page_range: tuple[int, int] | None = None):
+        return self._impl.extract(pdf_path, page_range=page_range)
+
+
+def test_validate_pdf_rejects_page_count_without_range(tmp_path: Path):
+    pytest.importorskip("docling")
+    from RAG_Agent.infrastructure.ingestion.exceptions import PDFValidationError
+
+    pdf = _write_n_page_pdf(tmp_path / "three.pdf", 3)
+    extractor = _LimitsExtractor(max_pages=2)
+    with pytest.raises(PDFValidationError, match="too large"):
+        extractor._validate_pdf(pdf)
+
+
+def test_validate_pdf_accepts_range_within_max_pages(tmp_path: Path):
+    pytest.importorskip("docling")
+
+    pdf = _write_n_page_pdf(tmp_path / "three.pdf", 3)
+    extractor = _LimitsExtractor(max_pages=2)
+    assert extractor._validate_pdf(pdf, page_range=(1, 2)) == 3
+    result = extractor.extract(pdf, page_range=(1, 2))
+    assert result is not None
+    assert extractor.convert_calls == [(pdf, (1, 2), 3)]
+
+
+def test_validate_pdf_rejects_inverted_and_oob_range(tmp_path: Path):
+    pytest.importorskip("docling")
+    from RAG_Agent.infrastructure.ingestion.exceptions import PDFValidationError
+
+    pdf = _write_n_page_pdf(tmp_path / "three.pdf", 3)
+    extractor = _LimitsExtractor(max_pages=2)
+    with pytest.raises(PDFValidationError, match="Invalid page_range"):
+        extractor._validate_pdf(pdf, page_range=(2, 1))
+    with pytest.raises(PDFValidationError, match="Invalid page_range"):
+        extractor._validate_pdf(pdf, page_range=(1, 99))
+
+
+class _RecordingExtractor:
+    def __init__(self, fail_on: set[tuple[int, int] | None] | None = None) -> None:
+        self.calls: list[tuple[Path, tuple[int, int] | None]] = []
+        self.fail_on = fail_on or set()
+
+    def extract(self, pdf_path: Path, *, page_range: tuple[int, int] | None = None):
+        from RAG_Agent.infrastructure.ingestion.exceptions import PDFParsingException
+
+        path = Path(pdf_path)
+        self.calls.append((path, page_range))
+        siblings = sorted(child.name for child in path.parent.glob("*.pdf"))
+        assert siblings == [path.name], siblings
+        if page_range in self.fail_on:
+            raise PDFParsingException(f"failed range {page_range}")
+        return page_range
+
+
+class _RangeNormalizer:
+    def normalize(self, docling_document, *, source_path, profile, parser_name):
+        lo, _hi = docling_document if isinstance(docling_document, tuple) else (1, 1)
+        heading = Block(
+            id="block_0",
+            type=BlockType.HEADING,
+            order=0,
+            page=lo,
+            text=f"Heading {lo}",
+            level=1,
+        )
+        paragraph = Block(
+            id="block_1",
+            type=BlockType.PARAGRAPH,
+            order=1,
+            page=lo,
+            text=f"Body {lo}",
+        )
+        return CanonicalDocument(
+            metadata=DocumentMetadata(source_path=source_path, title=f"t{lo}"),
+            blocks={heading.id: heading, paragraph.id: paragraph},
+            pages=[Page(number=lo, block_ids=[heading.id, paragraph.id])],
+            sections=[],
+        )
+
+    def build_sections(self, blocks, rules=None):
+        return []
+
+    def resolve_title(self, sections, blocks, hint, rules=None):
+        return hint
+
+
+def _pipeline(extractor, normalizer=None, pages_per_shard: int = 2):
+    pytest.importorskip("docling")
+    from RAG_Agent.infrastructure.ingestion.ingest_profile import IngestHardwareProfile
+    from RAG_Agent.infrastructure.ingestion.native_pdf_pipeline import NativePdfPipeline
+
+    return NativePdfPipeline(
+        DefaultProfileResolver(),
+        extractor=extractor,
+        normalizer=normalizer or _RangeNormalizer(),
+        hardware=IngestHardwareProfile(
+            name="test",
+            pages_per_shard=pages_per_shard,
+            max_file_size_mb=200,
+        ),
+    )
+
+
+def test_pipeline_page_ranges_on_cleaned_pdf_no_sub_pdfs(tmp_path: Path):
+    pytest.importorskip("fitz")
+
+    pdf = _write_n_page_pdf(tmp_path / "five.pdf", 5)
+    extractor = _RecordingExtractor()
+    result = _pipeline(extractor).parse(pdf)
+
+    ranges = [page_range for _path, page_range in extractor.calls]
+    assert ranges == [(1, 2), (3, 4), (5, 5)]
+    paths = [path for path, _page_range in extractor.calls]
+    assert len(set(paths)) == 1
+    assert paths[0].name == "five_cleaned.pdf"
+    assert {block.page for block in result.blocks.values()} == {1, 3, 5}
+    assert "failed_shards" not in result.metadata.extra
+
+
+def test_pipeline_fail_forward_skips_one_range(tmp_path: Path):
+    pytest.importorskip("fitz")
+
+    pdf = _write_n_page_pdf(tmp_path / "five.pdf", 5)
+    extractor = _RecordingExtractor(fail_on={(3, 4)})
+    result = _pipeline(extractor).parse(pdf)
+
+    ranges = [page_range for _path, page_range in extractor.calls]
+    assert ranges == [(1, 2), (3, 4), (5, 5)]
+    assert result.metadata.extra["failed_shards"] == "1"
+    assert {block.page for block in result.blocks.values()} == {1, 5}
+
+
+def test_pipeline_all_ranges_fail_raises(tmp_path: Path):
+    pytest.importorskip("fitz")
+    from RAG_Agent.infrastructure.ingestion.exceptions import PDFParsingException
+
+    pdf = _write_n_page_pdf(tmp_path / "five.pdf", 5)
+    extractor = _RecordingExtractor(fail_on={(1, 2), (3, 4), (5, 5)})
+    with pytest.raises(PDFParsingException, match="All 3 shards failed"):
+        _pipeline(extractor).parse(pdf)
+
+
+def test_pipeline_does_not_swallow_normalizer_type_error(tmp_path: Path):
+    pytest.importorskip("fitz")
+
+    class _BoomNormalizer(_RangeNormalizer):
+        def normalize(self, docling_document, *, source_path, profile, parser_name):
+            raise TypeError("mapper bug")
+
+    pdf = _write_n_page_pdf(tmp_path / "five.pdf", 5)
+    with pytest.raises(TypeError, match="mapper bug"):
+        _pipeline(_RecordingExtractor(), normalizer=_BoomNormalizer()).parse(pdf)
+
+
+@pytest.mark.integration
+def test_docling_page_range_keeps_original_folio(tmp_path: Path):
+    pytest.importorskip("docling")
+    pytest.importorskip("fitz")
+    from RAG_Agent.infrastructure.ingestion.extractors.docling_extractor import (
+        DoclingExtractor,
+    )
+    from RAG_Agent.infrastructure.ingestion.normalizers.docling_normalizer import (
+        DoclingNormalizer,
+    )
+
+    pdf = _write_n_page_pdf(tmp_path / "two.pdf", 2)
+    extractor = DoclingExtractor(max_pages=2)
+    docling_doc = extractor.extract(pdf, page_range=(2, 2))
+
+    page_nos: set[int] = set()
+    doc_pages = getattr(docling_doc, "pages", {}) or {}
+    page_nos.update(int(key) for key in doc_pages)
+    for item, _depth in docling_doc.iterate_items():
+        for prov in getattr(item, "prov", None) or []:
+            page = getattr(prov, "page_no", None)
+            if page is not None:
+                page_nos.add(int(page))
+
+    assert page_nos, "Docling returned no page numbers for page_range=(2, 2)"
+    assert page_nos == {2}, (
+        f"Docling page_range=(2, 2) numbered {page_nos}; "
+        "if this is {1}, NativePdfPipeline._page_offset_for_range must return lo - 1"
+    )
+
+    profile = DefaultProfileResolver().resolve(pdf)
+    canonical = DoclingNormalizer().normalize(
+        docling_doc,
+        source_path=pdf,
+        profile=profile,
+        parser_name="native_pdf_docling",
+    )
+    block_pages = {block.page for block in canonical.blocks.values() if block.page is not None}
+    if block_pages:
+        assert block_pages == {2}
