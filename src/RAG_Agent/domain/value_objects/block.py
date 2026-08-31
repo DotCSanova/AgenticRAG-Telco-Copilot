@@ -15,6 +15,27 @@ class BlockType(str, Enum):
     NOTE = "note"
 
 
+def coord_origin_name(value: object | None) -> str:
+    """Return a JSON-safe PDF coordinate origin (e.g. ``BOTTOMLEFT``).
+
+    Args:
+        value: Enum, enum ``name``, or a string. ``str(CoordOrigin.BOTTOMLEFT)``
+            becomes ``"CoordOrigin.BOTTOMLEFT"``; that prefix is stripped.
+
+    Returns:
+        Origin token without a class prefix. Defaults to ``BOTTOMLEFT``.
+    """
+    if value is None:
+        return "BOTTOMLEFT"
+    name = getattr(value, "name", None)
+    if isinstance(name, str) and name:
+        return name
+    text = str(value).strip()
+    if "." in text:
+        text = text.rsplit(".", 1)[-1]
+    return text or "BOTTOMLEFT"
+
+
 @dataclass(frozen=True)
 class BoundingBox:
     x0: float

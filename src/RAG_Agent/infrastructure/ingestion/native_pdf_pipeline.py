@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import tempfile
+from dataclasses import replace
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from RAG_Agent.domain.doc_processing_rules.document_processing import DocumentProfileResolver
@@ -83,12 +85,13 @@ class NativePdfPipeline:
 
             if page_count <= shard_size:
                 docling_document = self._extractor.extract(cleaned_path)
-                return self._normalizer.normalize(
+                document = self._normalizer.normalize(
                     docling_document,
                     source_path=path,
                     profile=profile,
                     parser_name="native_pdf_docling",
                 )
+                return _with_docling_version(document)
 
             page_ranges = [
                 (lo, min(lo + shard_size - 1, page_count))
@@ -133,7 +136,7 @@ class NativePdfPipeline:
             if failed_shards:
                 extra["failed_shards"] = ",".join(map(str, failed_shards))
 
-            return merge_canonical_shards(
+            document = merge_canonical_shards(
                 parts,
                 source_path=path,
                 profile_id=profile.rules.profile_id,
@@ -148,3 +151,20 @@ class NativePdfPipeline:
                 title_hint=profile.identity.title_hint,
                 extra=extra,
             )
+            return _with_docling_version(document)
+
+
+def _docling_package_version() -> str | None:
+    try:
+        return version("docling")
+    except PackageNotFoundError:
+        return None
+
+
+def _with_docling_version(document: CanonicalDocument) -> CanonicalDocument:
+    package_version = _docling_package_version()
+    if not package_version:
+        return document
+    extra = dict(document.metadata.extra)
+    extra["docling_version"] = package_version
+    return replace(document, metadata=replace(document.metadata, extra=extra))

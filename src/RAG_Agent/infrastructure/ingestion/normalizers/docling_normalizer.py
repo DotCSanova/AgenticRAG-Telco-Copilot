@@ -33,6 +33,7 @@ from RAG_Agent.domain.value_objects.block import (
     BoundingBox,
     ImageRef,
     TableData,
+    coord_origin_name,
 )
 from RAG_Agent.domain.value_objects.block_pipeline import refine_block_sequence
 from RAG_Agent.domain.value_objects.canonical_document import (
@@ -259,7 +260,9 @@ class DoclingNormalizer:
                 y0=float(getattr(raw_bbox, "b", getattr(raw_bbox, "y0", 0.0))),
                 x1=float(getattr(raw_bbox, "r", getattr(raw_bbox, "x1", 0.0))),
                 y1=float(getattr(raw_bbox, "t", getattr(raw_bbox, "y1", 0.0))),
-                coord_origin=str(getattr(raw_bbox, "coord_origin", "BOTTOMLEFT")),
+                coord_origin=coord_origin_name(
+                    getattr(raw_bbox, "coord_origin", "BOTTOMLEFT")
+                ),
             )
         return page, bbox
 
