@@ -22,12 +22,14 @@ from RAG_Agent.infrastructure.api.models import (
     ResetMemoryResponse,
 )
 from RAG_Agent.infrastructure.composition.serving import build_search_service
+from RAG_Agent.infrastructure.logging_config import configure_app_logging
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_app_logging()
     search_service = build_search_service()
     search_tool = make_search_documents_tool(search_service.execute)
     session_service = build_session_service()

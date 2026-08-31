@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
 
 from RAG_Agent.application.ingest_documents_service.ingest_document import IngestDocumentService
 from RAG_Agent.config import settings
@@ -21,7 +20,9 @@ from RAG_Agent.infrastructure.api.ingest_events import (
     classify_object,
     parse_pubsub_gcs_envelope,
 )
+from RAG_Agent.infrastructure.api.models import IngestIgnoredResponse, IngestOkResponse
 from RAG_Agent.infrastructure.composition.ingest import build_ingest_service, run_ingest
+from RAG_Agent.infrastructure.logging_config import configure_app_logging
 from RAG_Agent.infrastructure.secrets.gcp_secrets import apply_ingest_secrets_from_secret_manager
 from RAG_Agent.infrastructure.storage.gcs import download_gcs_object
 
@@ -47,12 +48,14 @@ def _is_gcs_not_found(exc: BaseException) -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_app_logging()
     apply_ingest_secrets_from_secret_manager()
     app.state.ingest_service = build_ingest_service()
     logger.info(
-        "Ingest worker ready (sparse=%s, secret_manager=%s)",
+        "Ingest worker ready (sparse=%s, secret_manager=%s chunker=%s)",
         settings.qdrant_enable_sparse,
         settings.use_secret_manager,
+        settings.chunker,
     )
     yield
 
@@ -66,7 +69,9 @@ app = FastAPI(
 
 
 @app.post("/")
-def pubsub_push(request: Request, body: dict[str, Any]):
+def pubsub_push(
+    request: Request, body: dict[str, Any]
+) -> IngestOkResponse | IngestIgnoredResponse:
     try:
         notification = parse_pubsub_gcs_envelope(body)
     except EnvelopeError as exc:
@@ -74,15 +79,12 @@ def pubsub_push(request: Request, body: dict[str, Any]):
 
     if notification.event_type and notification.event_type != "OBJECT_FINALIZE":
         logger.info(
-            "Skipping non-finalize event bucket=%s object=%s eventType=%s",
+            "Ingest ignored bucket=%s object=%s eventType=%s",
             notification.bucket,
             notification.object_id,
             notification.event_type,
         )
-        return JSONResponse(
-            status_code=200,
-            content={"status": "ignored", "eventType": notification.event_type},
-        )
+        return IngestIgnoredResponse(eventType=notification.event_type)
 
     kind = classify_object(notification.object_id)
     if kind == "word":
@@ -103,7 +105,7 @@ def pubsub_push(request: Request, body: dict[str, Any]):
     except Exception as exc:
         if _is_gcs_not_found(exc):
             logger.warning(
-                "GCS object not found bucket=%s object=%s generation=%s",
+                "Ingest skipped GCS not found bucket=%s object=%s generation=%s",
                 notification.bucket,
                 notification.object_id,
                 notification.generation,
@@ -117,25 +119,24 @@ def pubsub_push(request: Request, body: dict[str, Any]):
         )
         raise HTTPException(status_code=500, detail=f"ingest failed: {exc}") from exc
 
-    doc_id = result.extra.get("doc_id", "")
+    response = IngestOkResponse(
+        doc_id=str(result.extra.get("doc_id", "")),
+        chunk_count=result.chunk_count,
+        deleted=str(result.extra.get("deleted", "0")),
+        upserted=str(result.extra.get("upserted", "0")),
+    )
     logger.info(
-        "Ingest ok bucket=%s object=%s generation=%s doc_id=%s "
-        "chunk_count=%s deleted=%s upserted=%s",
+        "Ingest ok bucket=%s object=%s generation=%s doc_id=%s chunk_count=%s "
+        "deleted=%s upserted=%s",
         notification.bucket,
         notification.object_id,
         notification.generation,
-        doc_id,
-        result.chunk_count,
-        result.extra.get("deleted", "0"),
-        result.extra.get("upserted", "0"),
+        response.doc_id,
+        response.chunk_count,
+        response.deleted,
+        response.upserted,
     )
-    return {
-        "status": "ok",
-        "doc_id": doc_id,
-        "chunk_count": result.chunk_count,
-        "deleted": result.extra.get("deleted", "0"),
-        "upserted": result.extra.get("upserted", "0"),
-    }
+    return response
 
 
 if __name__ == "__main__":

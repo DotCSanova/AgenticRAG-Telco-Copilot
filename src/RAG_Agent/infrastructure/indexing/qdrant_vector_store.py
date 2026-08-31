@@ -13,6 +13,7 @@ from qdrant_client.models import (
     FusionQuery,
     MatchValue,
     Modifier,
+    PayloadSchemaType,
     PointStruct,
     Prefetch,
     SparseVector,
@@ -87,7 +88,22 @@ class QdrantVectorStore:
                 self._enable_sparse,
             )
 
+        self._ensure_doc_id_payload_index()
         self._ready_for_dim = dense_dim
+
+    def _ensure_doc_id_payload_index(self) -> None:
+        """Qdrant Cloud requires a keyword index to filter/count/delete by ``doc_id``."""
+        info = self._client.get_collection(self._collection)
+        schema = info.payload_schema or {}
+        if "doc_id" in schema:
+            return
+        self._client.create_payload_index(
+            collection_name=self._collection,
+            field_name="doc_id",
+            field_schema=PayloadSchemaType.KEYWORD,
+            wait=True,
+        )
+        logger.info("Created payload index doc_id (keyword) on %s", self._collection)
 
     @staticmethod
     def _point_id(chunk_id: str) -> str:
@@ -188,6 +204,9 @@ class QdrantVectorStore:
             raise ValueError("doc_id must be a non-empty string")
         if not self._client.collection_exists(self._collection):
             return 0
+
+        # delete runs before upsert; collection may exist without indexes yet
+        self._ensure_doc_id_payload_index()
 
         doc_filter = Filter(
             must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))]

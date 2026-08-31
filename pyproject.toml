@@ -34,8 +34,9 @@ serving = [
 ingest = [
   "pymupdf>=1.27.2.3",
   "docling>=2.93.0",
-  # Docling pulls opencv-python; headless avoids X11/GL system libs in Docker.
-  "opencv-python-headless>=4.8.0",
+  # Docling pulls opencv-python; headless avoids X11/GL in Docker.
+  # Pin 4.x: 5.x on Windows can install a cv2 namespace without setNumThreads.
+  "opencv-python-headless>=4.8.0,<5",
   "torch>=2.5.1",
   "torchvision>=0.20.1",
   "sentence-transformers>=5.6.1",

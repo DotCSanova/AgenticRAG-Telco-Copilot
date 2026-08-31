@@ -3,6 +3,7 @@
 Canonical reference for the **ingest surface**: how a technical PDF becomes searchable chunks in Qdrant, and how the Cloud Run worker exposes that process over HTTP.
 
 Design / GCP decisions: [gcp-ingest-pubsub.md](./gcp-ingest-pubsub.md).  
+Deploy / ops (manual `gcloud`): [gcp_ingest_deployment.md](./gcp_ingest_deployment.md).  
 Serving/chat API is separate (`main_chat`); this document covers ingest only.
 
 ---
@@ -132,7 +133,9 @@ There is no separate health HTTP route; Cloud Run can use a TCP probe on `$PORT`
 |---|---|
 | `.env` / env vars via pydantic `Settings` | Local and default |
 | `USE_SECRET_MANAGER=true` | Cloud Run: load `cohere-api-key`, `qdrant-url`, `qdrant-api-key` from Secret Manager at startup |
-| `GOOGLE_CLOUD_PROJECT` | Required for Secret Manager paths |
+| `GOOGLE_CLOUD_PROJECT` | GCP project id (Secret Manager paths; only project env name we use) |
+| `REGION` | Deploy / Artifact Registry region (scripts) |
+| `USE_SECRET_MANAGER` | `true` on Cloud Run ingest to load SM secrets |
 | `QDRANT_COLLECTION` | Default `tech_docs` |
 
 Chat/serving secrets are out of scope for this API.

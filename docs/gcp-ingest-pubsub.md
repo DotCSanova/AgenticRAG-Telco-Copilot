@@ -28,7 +28,7 @@ Upload / ops ──► GCS (docs)
 
 **Not in this phase:** Cloud Run **Job** on the hot path (Jobs reserved for scraper / backfills). Multi-agent / web search. Fan-Out Docling. Canonical Fan-In (§7.4). Terraform / CI-CD deploy. Word→PDF converter. SQL ingest registry. Local Pub/Sub emulator.
 
-**Manual GCP setup:** commands live in a dedicated runbook markdown (created in M3/M4), not in application code. CI/CD comes later.
+**Manual GCP setup:** [gcp_ingest_deployment.md](./gcp_ingest_deployment.md) (edit as you provision). CI/CD comes later.
 
 ---
 
@@ -175,7 +175,7 @@ src/RAG_Agent/
 scripts/ingest_local.py          # thin CLI → run_ingest
 Dockerfile.ingest                # CMD: uvicorn main_ingest (CLI via override)
 docs/gcp-ingest-pubsub.md        # this design
-docs/gcp-ingest-runbook.md       # manual gcloud (M3/M4; create if missing)
+docs/gcp_ingest_deployment.md    # manual gcloud deploy / ops (M3/M4)
 tests/…                          # envelope parse, extension gate, GCS fake, handler
 ```
 
@@ -224,7 +224,7 @@ Keep `/eval` on `main_chat`. Do not reintroduce monolith `main.py`.
 
 ### M3 — GCP wiring (manual `gcloud` runbook)
 
-- [ ] Create `docs/gcp-ingest-runbook.md` with copy-pasteable `gcloud` steps
+- [x] Create `docs/gcp_ingest_deployment.md` with copy-pasteable `gcloud` steps (skeleton; fill while provisioning)
 - [ ] GCS bucket + Pub/Sub topic + push subscription → Cloud Run URL `/`
 - [ ] GCS notification `OBJECT_FINALIZE` (no PDF-only notification filter)
 - [ ] Cloud Run Ingest: `Dockerfile.ingest`, `--concurrency=1`, `--memory=8Gi`, high `--timeout`, ack deadline **600** on subscription
@@ -368,11 +368,10 @@ QDRANT_COLLECTION      # existing Settings field (default today: tech_docs)
 **Runbook placeholders (PowerShell), for topic/bucket creation — not read from the push handler for download:**
 
 ```powershell
-$env:PROJECT_ID   = "your-gcp-project"
-$env:REGION       = "europe-west1"
-$env:BUCKET_NAME  = "$env:PROJECT_ID-input-docs"
+# Prefer values from .env (GOOGLE_CLOUD_PROJECT, REGION) after loading it.
+$env:BUCKET_NAME  = "$env:GOOGLE_CLOUD_PROJECT-input-docs"
 $env:TOPIC_NAME   = "doc-ingestion-topic"
-$env:SUB_NAME     = "doc-processor-sub"
+$env:SUB_NAME     = "doc-ingestion-sub"
 $env:DLQ_TOPIC    = "doc-ingestion-dlq"
 $env:INGEST_SERVICE_NAME = "rag-ingest"
 ```

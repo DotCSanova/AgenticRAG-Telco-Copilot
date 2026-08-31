@@ -41,7 +41,9 @@ docker compose --profile dev up -d agent-dev-ui
 
 ## Ingest
 
-Process and HTTP contract: [docs/ingest-api.md](docs/ingest-api.md). GCP design: [docs/gcp-ingest-pubsub.md](docs/gcp-ingest-pubsub.md).
+Process and HTTP contract: [docs/ingest-api.md](docs/ingest-api.md).  
+GCP design: [docs/gcp-ingest-pubsub.md](docs/gcp-ingest-pubsub.md).  
+Deploy / ops: [docs/gcp_ingest_deployment.md](docs/gcp_ingest_deployment.md).
 
 ### Ingest a PDF (local)
 

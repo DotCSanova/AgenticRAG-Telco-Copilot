@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -29,3 +31,20 @@ class ResetMemoryResponse(BaseModel):
     user_id: str
     session_id: str
     reset: bool
+
+
+class IngestOkResponse(BaseModel):
+    """Pub/Sub push success body after indexing a PDF."""
+
+    status: Literal["ok"] = "ok"
+    doc_id: str
+    chunk_count: int
+    deleted: str = "0"
+    upserted: str = "0"
+
+
+class IngestIgnoredResponse(BaseModel):
+    """Ack for non-OBJECT_FINALIZE notifications (no ingest)."""
+
+    status: Literal["ignored"] = "ignored"
+    eventType: str | None = None
