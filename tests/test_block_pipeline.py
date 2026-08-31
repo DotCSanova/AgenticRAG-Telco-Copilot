@@ -130,3 +130,34 @@ def test_clean_cover_page_keeps_multiline_title_redacts_footer_and_images(tmp_pa
         assert "VAT ID" not in text
         assert "Register of Associations" not in text
         assert out[0].get_images() == []
+
+
+def test_default_rules_do_not_merge_plantuml():
+    blocks = [
+        _block(0, "@startuml"),
+        _block(1, "Alice -> Bob: hi"),
+        _block(2, "@enduml"),
+        _block(3, "Following prose."),
+    ]
+    result = refine_block_sequence(blocks, rules=DEFAULT_DOCUMENT_RULES)
+    assert all(block.type != BlockType.CODE for block in result)
+    assert [block.text for block in result] == [
+        "@startuml",
+        "Alice -> Bob: hi",
+        "@enduml",
+        "Following prose.",
+    ]
+
+
+def test_oran_rules_merge_plantuml():
+    blocks = [
+        _block(0, "@startuml"),
+        _block(1, "Alice -> Bob: hi"),
+        _block(2, "@enduml"),
+        _block(3, "Following prose."),
+    ]
+    result = refine_block_sequence(blocks, rules=ORAN_RULES)
+    code = [block for block in result if block.type == BlockType.CODE]
+    assert len(code) == 1
+    assert "@startuml" in (code[0].text or "")
+    assert result[-1].text == "Following prose."

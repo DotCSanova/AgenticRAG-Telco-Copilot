@@ -83,6 +83,8 @@ class DocumentProcessingRules(Protocol):
 
     def refine_blocks(self, blocks: list[Block]) -> list[Block]: ...
 
+    def merge_diagram_fragments(self, blocks: list[Block]) -> list[Block]: ...
+
 
 @dataclass(frozen=True)
 class DocumentProfile:
@@ -164,4 +166,8 @@ class BaseDocumentRules:
 
     def refine_blocks(self, blocks: list[Block]) -> list[Block]:
         """Hook post-extracción para normalización específica de familia. Default: identidad."""
+        return blocks
+
+    def merge_diagram_fragments(self, blocks: list[Block]) -> list[Block]:
+        """Optional family merge of split diagrams (e.g. PlantUML). Default: identity."""
         return blocks

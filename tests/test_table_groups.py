@@ -308,3 +308,49 @@ def test_page_numbers_fills_metadata_page_end_without_spans():
         metadata={"page_end": "5", "continued": "true"},
     )
     assert block.page_numbers() == (3, 4, 5)
+
+
+def test_refine_does_not_merge_placeholder_tables_on_same_page():
+    blocks = [
+        _table(
+            "t0",
+            headers=["0", "1"],
+            rows=[["a", "b"]],
+            order=0,
+            page=8,
+            bbox=_bbox(y0=100, y1=200),
+        ),
+        _table(
+            "t1",
+            headers=["0", "1"],
+            rows=[["c", "d"]],
+            order=1,
+            page=8,
+            bbox=_bbox(y0=400, y1=500),
+        ),
+    ]
+    tables = [block for block in refine_table_blocks(blocks) if block.type == BlockType.TABLE]
+    assert len(tables) == 2
+
+
+def test_refine_does_not_merge_when_column_count_drifts():
+    blocks = [
+        _table(
+            "t0",
+            headers=["A", "B", "C"],
+            rows=[["1", "2", "3"]],
+            order=0,
+            page=13,
+            bbox=_bbox(y0=70, y1=200),
+        ),
+        _table(
+            "t1",
+            headers=["0", "1", "2", "3", "4"],
+            rows=[["a", "b", "c", "d", "e"]],
+            order=1,
+            page=14,
+            bbox=_bbox(y0=380, y1=760),
+        ),
+    ]
+    tables = [block for block in refine_table_blocks(blocks) if block.type == BlockType.TABLE]
+    assert len(tables) == 2

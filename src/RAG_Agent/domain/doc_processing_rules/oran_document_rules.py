@@ -15,7 +15,7 @@ from RAG_Agent.domain.doc_processing_rules.oran_block_refinement import (
     section_heading_level,
 )
 from RAG_Agent.domain.value_objects.block import Block
-
+from RAG_Agent.domain.value_objects.plantuml_groups import merge_plantuml_fragments
 
 # Front matter lo filtra el normalizer (is_removable_section). Preprocess solo chrome/portada.
 _ORAN_PREPROCESS = PreprocessOptions(
@@ -158,6 +158,10 @@ class OranDocumentRules(BaseDocumentRules):
     def refine_blocks(self, blocks: list[Block]) -> list[Block]:
         """Corrige headings y niveles de lista mal detectados por Docling."""
         return refine_oran_blocks(blocks)
+
+    def merge_diagram_fragments(self, blocks: list[Block]) -> list[Block]:
+        """Merge split PlantUML listings typical of O-RAN figures."""
+        return merge_plantuml_fragments(blocks)
 
 
 @dataclass(frozen=True)

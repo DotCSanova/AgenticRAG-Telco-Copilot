@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 
-from RAG_Agent.domain.value_objects.block import Block, BlockType, LayoutSpan, TableData
+from RAG_Agent.domain.value_objects.block import Block, BlockType, BoundingBox, LayoutSpan, TableData
 
 _TABLE_CAPTION_RE = re.compile(r"^table\s+[\d.]+-?\d*", re.IGNORECASE)
 
@@ -49,25 +49,49 @@ def _table_caption_text(block: Block) -> str | None:
     return None
 
 
-def is_table_continuation(previous: TableData, current: TableData) -> bool:
-    prev_cols = table_column_count(previous)
-    curr_cols = table_column_count(current)
-    if prev_cols == 0 or curr_cols == 0:
+def _bboxes_overlap_x(left: BoundingBox | None, right: BoundingBox | None) -> bool:
+    if left is None or right is None:
+        return True
+    return left.x0 < right.x1 and right.x0 < left.x1
+
+
+def is_table_continuation(previous: Block, current: Block) -> bool:
+    """True if ``current`` looks like the next fragment of ``previous``.
+
+    Requires similar column counts and either the next PDF page (typical
+    Docling split) or matching real headers. Placeholder headers (``0,1,2``)
+    alone are not enough unless the fragments are on consecutive pages.
+    """
+    prev_table = previous.table
+    curr_table = current.table
+    if prev_table is None or curr_table is None:
         return False
 
-    # Cabecera real repetida en salto de página
-    if (
-        current.headers
-        and not is_placeholder_headers(current.headers)
-        and previous.headers
-        and current.headers == previous.headers
-    ):
-        return True
+    prev_cols = table_column_count(prev_table)
+    curr_cols = table_column_count(curr_table)
+    if prev_cols == 0 or curr_cols == 0:
+        return False
+    if abs(prev_cols - curr_cols) > 1:
+        return False
 
-    # Fragmento típico Docling: headers 0,1,2… (el nº de columnas puede drift)
-    if is_placeholder_headers(current.headers):
-        return True
+    next_page = (
+        previous.page is not None
+        and current.page is not None
+        and current.page == previous.page + 1
+    )
+    overlap_x = _bboxes_overlap_x(previous.bbox, current.bbox)
+    matching_headers = bool(
+        curr_table.headers
+        and prev_table.headers
+        and not is_placeholder_headers(curr_table.headers)
+        and curr_table.headers == prev_table.headers
+    )
+    placeholder = is_placeholder_headers(curr_table.headers)
 
+    if matching_headers:
+        return next_page or overlap_x
+    if placeholder:
+        return next_page and overlap_x
     return False
 
 
@@ -82,9 +106,7 @@ def _continuation_table_indexes(blocks: list[Block], start: int) -> list[int]:
     while cursor < len(blocks):
         candidate = blocks[cursor]
         if candidate.type == BlockType.TABLE and candidate.table is not None:
-            previous_table = blocks[indexes[-1]].table
-            assert previous_table is not None
-            if is_table_continuation(previous_table, candidate.table):
+            if is_table_continuation(blocks[indexes[-1]], candidate):
                 indexes.append(cursor)
                 cursor += 1
                 continue
@@ -108,7 +130,7 @@ def _is_continuation_fragment(blocks: list[Block], index: int) -> bool:
     previous = blocks[cursor]
     if previous.type != BlockType.TABLE or previous.table is None:
         return False
-    return is_table_continuation(previous.table, block.table)
+    return is_table_continuation(previous, block)
 
 
 def attach_table_captions(blocks: list[Block]) -> list[Block]:

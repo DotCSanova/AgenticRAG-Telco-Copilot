@@ -6,7 +6,7 @@ from RAG_Agent.domain.doc_processing_rules.document_processing import (
 from RAG_Agent.domain.value_objects._block_utils import renumber_blocks
 from RAG_Agent.domain.value_objects.block import Block, BlockType
 from RAG_Agent.domain.value_objects.figure_groups import attach_figure_captions
-from RAG_Agent.domain.value_objects.plantuml_groups import merge_plantuml_fragments
+from RAG_Agent.domain.value_objects.layout_dedup import drop_overlapping_images_on_tables
 from RAG_Agent.domain.value_objects.table_groups import refine_table_blocks
 
 
@@ -87,8 +87,8 @@ def refine_block_sequence(
     """Apply family and structural refiners to a mapped block sequence.
 
     Order: ``refine_blocks`` → drop removable sections → drop cover
-    boilerplate → PlantUML merge → figure captions → table captions/merge →
-    renumber once.
+    boilerplate → overlapping picture/table → family diagrams → figure
+    captions → table captions/merge → renumber once.
 
     Args:
         blocks: Blocks already mapped from the parser, in reading order.
@@ -100,7 +100,8 @@ def refine_block_sequence(
     refined = rules.refine_blocks(blocks)
     refined = drop_removable_sections(refined, rules=rules)
     refined = drop_cover_page_boilerplate(refined, rules=rules)
-    refined = merge_plantuml_fragments(refined)
+    refined = drop_overlapping_images_on_tables(refined)
+    refined = rules.merge_diagram_fragments(refined)
     refined = attach_figure_captions(refined)
     refined = refine_table_blocks(refined)
     return renumber_blocks(refined)

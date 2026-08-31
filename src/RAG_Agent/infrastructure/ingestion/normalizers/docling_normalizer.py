@@ -7,6 +7,7 @@ from typing import Any
 
 from docling_core.types.doc import (
     CodeItem,
+    DocItemLabel,
     DoclingDocument,
     FormulaItem,
     ListItem,
@@ -32,6 +33,7 @@ from RAG_Agent.domain.value_objects.block import (
     BlockType,
     BoundingBox,
     ImageRef,
+    LayoutSpan,
     TableData,
     coord_origin_name,
 )
@@ -46,6 +48,102 @@ from RAG_Agent.domain.value_objects.section import Section
 logger = logging.getLogger(__name__)
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+_BODY_LAYERS = {ContentLayer.BODY}
+_DROP_LABELS = {DocItemLabel.PAGE_HEADER, DocItemLabel.PAGE_FOOTER}
+
+
+def _linked_caption_refs(doc: DoclingDocument) -> set[str]:
+    linked: set[str] = set()
+    for element, _depth in doc.iterate_items(included_content_layers=_BODY_LAYERS):
+        refs = list(getattr(element, "captions", None) or ())
+        refs.extend(getattr(element, "footnotes", None) or ())
+        for ref in refs:
+            cref = getattr(ref, "cref", None)
+            if cref:
+                linked.add(cref)
+            resolved = _resolve_ref(doc, ref)
+            self_ref = getattr(resolved, "self_ref", None) if resolved is not None else None
+            if self_ref:
+                linked.add(self_ref)
+    return linked
+
+
+def _resolve_ref(doc: DoclingDocument, ref: Any) -> Any | None:
+    resolve = getattr(ref, "resolve", None)
+    if not callable(resolve):
+        return None
+    try:
+        return resolve(doc)
+    except (AttributeError, RuntimeError, IndexError, TypeError, ValueError):
+        return None
+
+
+def _resolve_caption_text(doc: DoclingDocument, refs: Any) -> str | None:
+    for ref in refs or ():
+        resolved = _resolve_ref(doc, ref)
+        text = (getattr(resolved, "text", None) or "").strip()
+        if text:
+            return text
+    return None
+
+
+def _bbox_from_raw(raw_bbox: Any) -> BoundingBox | None:
+    if raw_bbox is None:
+        return None
+    return BoundingBox(
+        x0=float(getattr(raw_bbox, "l", getattr(raw_bbox, "x0", 0.0))),
+        y0=float(getattr(raw_bbox, "b", getattr(raw_bbox, "y0", 0.0))),
+        x1=float(getattr(raw_bbox, "r", getattr(raw_bbox, "x1", 0.0))),
+        y1=float(getattr(raw_bbox, "t", getattr(raw_bbox, "y1", 0.0))),
+        coord_origin=coord_origin_name(getattr(raw_bbox, "coord_origin", "BOTTOMLEFT")),
+    )
+
+
+def _layout_from_element(
+    element: Any,
+) -> tuple[int | None, BoundingBox | None, tuple[LayoutSpan, ...]]:
+    source_ref = getattr(element, "self_ref", None)
+    spans: list[LayoutSpan] = []
+    for prov in getattr(element, "prov", None) or ():
+        page = getattr(prov, "page_no", None)
+        spans.append(
+            LayoutSpan(page=page, bbox=_bbox_from_raw(getattr(prov, "bbox", None)), source_ref=source_ref)
+        )
+    if not spans:
+        return None, None, ()
+    layout_spans = tuple(spans) if len(spans) > 1 else ()
+    return spans[0].page, spans[0].bbox, layout_spans
+
+
+def _grid_to_table_data(table: TableItem) -> TableData:
+    data = getattr(table, "data", None)
+    grid = getattr(data, "grid", None) if data is not None else None
+    if not grid:
+        return TableData()
+
+    header_rows: list[list[str]] = []
+    body_rows: list[list[str]] = []
+    saw_column_header = False
+    for row in grid:
+        cells = list(row) if isinstance(row, list) else [row]
+        texts = [str(getattr(cell, "text", cell) or "") for cell in cells]
+        if any(getattr(cell, "column_header", False) for cell in cells):
+            saw_column_header = True
+            header_rows.append(texts)
+        else:
+            body_rows.append(texts)
+
+    if not saw_column_header:
+        return TableData(headers=[], rows=body_rows)
+
+    width = max((len(row) for row in header_rows), default=0)
+    headers = [""] * width
+    for row in header_rows:
+        for index, cell in enumerate(row):
+            if not cell.strip():
+                continue
+            headers[index] = f"{headers[index]} {cell}".strip() if headers[index] else cell
+    return TableData(headers=headers, rows=body_rows)
 
 
 class DoclingNormalizer:
@@ -105,11 +203,19 @@ class DoclingNormalizer:
         doc: DoclingDocument,
         rules: DocumentProcessingRules,
     ) -> list[Block]:
+        linked_refs = _linked_caption_refs(doc)
+        drop_index = "contents" in rules.removable_sections
         blocks: list[Block] = []
         order = 0
 
-        for element, _depth in doc.iterate_items():
-            if getattr(element, "content_layer", None) == ContentLayer.FURNITURE:
+        for element, _depth in doc.iterate_items(included_content_layers=_BODY_LAYERS):
+            label = getattr(element, "label", None)
+            if label in _DROP_LABELS:
+                continue
+            if drop_index and label == DocItemLabel.DOCUMENT_INDEX:
+                continue
+            self_ref = getattr(element, "self_ref", None)
+            if self_ref and self_ref in linked_refs:
                 continue
 
             if isinstance(element, (SectionHeaderItem, TitleItem)):
@@ -160,7 +266,7 @@ class DoclingNormalizer:
                 text=text,
             )
 
-        if isinstance(element, (CodeItem,)):
+        if isinstance(element, CodeItem):
             text = (element.text or "").strip()
             if not text:
                 return None
@@ -194,32 +300,34 @@ class DoclingNormalizer:
             )
 
         if isinstance(element, TableItem):
-            page, bbox = self._prov_page_bbox(element)
+            page, bbox, spans = _layout_from_element(element)
+            caption = _resolve_caption_text(doc, getattr(element, "captions", None))
+            table = self._table_to_data(element)
+            if caption and table.caption is None:
+                table = TableData(headers=table.headers, rows=table.rows, caption=caption)
             return Block(
                 id=f"block_{order}",
                 type=BlockType.TABLE,
                 order=order,
                 page=page,
-                table=self._table_to_data(element, doc),
+                table=table,
                 bbox=bbox,
                 source_ref=getattr(element, "self_ref", None),
+                layout_spans=spans,
             )
 
         if isinstance(element, PictureItem):
-            page, bbox = self._prov_page_bbox(element)
-            alt = None
-            captions = getattr(element, "captions", None) or []
-            if captions:
-                # captions are often RefItems; best-effort text
-                alt = str(captions[0]) if captions else None
+            page, bbox, spans = _layout_from_element(element)
+            caption = _resolve_caption_text(doc, getattr(element, "captions", None))
             return Block(
                 id=f"block_{order}",
                 type=BlockType.IMAGE,
                 order=order,
                 page=page,
-                image=ImageRef(uri=None, alt=alt),
+                image=ImageRef(uri=None, alt=None, caption=caption),
                 bbox=bbox,
                 source_ref=getattr(element, "self_ref", None),
+                layout_spans=spans,
             )
 
         return None
@@ -233,7 +341,7 @@ class DoclingNormalizer:
         text: str,
         level: int | None = None,
     ) -> Block:
-        page, bbox = self._prov_page_bbox(element)
+        page, bbox, spans = _layout_from_element(element)
         return Block(
             id=f"block_{order}",
             type=block_type,
@@ -243,55 +351,20 @@ class DoclingNormalizer:
             level=level,
             bbox=bbox,
             source_ref=getattr(element, "self_ref", None),
+            layout_spans=spans,
         )
 
     @staticmethod
-    def _prov_page_bbox(element: Any) -> tuple[int | None, BoundingBox | None]:
-        provs = getattr(element, "prov", None) or []
-        if not provs:
-            return None, None
-        prov = provs[0]
-        page = getattr(prov, "page_no", None)
-        raw_bbox = getattr(prov, "bbox", None)
-        bbox = None
-        if raw_bbox is not None:
-            bbox = BoundingBox(
-                x0=float(getattr(raw_bbox, "l", getattr(raw_bbox, "x0", 0.0))),
-                y0=float(getattr(raw_bbox, "b", getattr(raw_bbox, "y0", 0.0))),
-                x1=float(getattr(raw_bbox, "r", getattr(raw_bbox, "x1", 0.0))),
-                y1=float(getattr(raw_bbox, "t", getattr(raw_bbox, "y1", 0.0))),
-                coord_origin=coord_origin_name(
-                    getattr(raw_bbox, "coord_origin", "BOTTOMLEFT")
-                ),
-            )
-        return page, bbox
-
-    @staticmethod
-    def _table_to_data(table: TableItem, doc: DoclingDocument) -> TableData:
+    def _table_to_data(table: TableItem) -> TableData:
         try:
-            dataframe = table.export_to_dataframe(doc=doc)
-            headers = [str(column) for column in dataframe.columns.tolist()]
-            rows = [[str(cell) for cell in row] for row in dataframe.to_numpy().tolist()]
-            return TableData(headers=headers, rows=rows)
-        except Exception:
-            logger.debug("export_to_dataframe failed for %s; using grid fallback", table.self_ref)
-
-        data = getattr(table, "data", None)
-        grid = getattr(data, "grid", None) if data is not None else None
-        if not grid:
+            return _grid_to_table_data(table)
+        except (AttributeError, TypeError, ValueError) as exc:
+            logger.warning(
+                "Degraded TABLE %s: %s",
+                getattr(table, "self_ref", None),
+                exc,
+            )
             return TableData()
-
-        rows: list[list[str]] = []
-        for row in grid:
-            if isinstance(row, list):
-                rows.append([str(getattr(cell, "text", cell) or "") for cell in row])
-            else:
-                # flat cell list variant in some exports
-                rows.append([str(getattr(row, "text", row) or "")])
-
-        headers = rows[0] if rows else []
-        body = rows[1:] if len(rows) > 1 else []
-        return TableData(headers=headers, rows=body)
 
     def _build_pages(self, doc: DoclingDocument, blocks: list[Block]) -> list[Page]:
         by_page = index_block_ids_by_page(blocks)
