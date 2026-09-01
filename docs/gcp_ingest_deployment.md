@@ -1,15 +1,27 @@
 # GCP ingest deployment
 
-Manual provisioning and ops for the Cloud Run **ingest** worker (Pub/Sub push → GCS download → `run_ingest`).
+Manual `gcloud` steps to run the **current** ingest worker on Google Cloud: upload a PDF to GCS, Pub/Sub pushes to Cloud Run, the service downloads the object and indexes it in Qdrant.
 
-- Process / HTTP API: [ingest-api.md](./ingest-api.md)
-- Design decisions: [gcp-ingest-pubsub.md](./gcp-ingest-pubsub.md)
+```text
+PDF → GCS (OBJECT_FINALIZE) → Pub/Sub → Cloud Run (POST /) → run_ingest → Qdrant
+```
 
-Event-driven flow: PDF upload to **GCS** → **Pub/Sub** → **Cloud Run** (`main_ingest`) → Docling / Cohere → **Qdrant**.
+Same application core as local: `scripts/ingest_local.py` / `run_ingest`. Chat and Postgres are **not** deployed here.
 
-Commands below are for **Windows PowerShell**. Run them from the **repository root** unless noted.
+| | |
+|---|---|
+| Files | `.pdf` only. `.doc` / `.docx` and other types → HTTP **400** (no retry). |
+| Identity | `doc_id` = filename stem. Re-upload replaces that stem in Qdrant. |
+| Time limit | Pub/Sub **ack deadline is 600 s**. Cloud Run `--timeout=3600` does not extend it. Use a PDF that finishes in well under 10 minutes. |
+| Scale | `concurrency=1` (required with Docling). `--max-instances=3`. |
+
+Worker HTTP details: [ingest.md](./ingest.md).
+
+Commands are **Windows PowerShell**, from the **repository root**.
 
 ---
+
+
 
 ## Resource names (single source of truth)
 
@@ -158,7 +170,7 @@ gcloud pubsub topics create $env:TOPIC_NAME
 gcloud pubsub topics create $env:DLQ_TOPIC
 ```
 
-Optional: pull subscription on the DLQ to inspect poison messages later:
+Optional: pull subscription on the DLQ to inspect failed messages:
 
 ```powershell
 gcloud pubsub subscriptions create "$env:DLQ_TOPIC-pull" --topic=$env:DLQ_TOPIC
@@ -168,7 +180,7 @@ gcloud pubsub subscriptions create "$env:DLQ_TOPIC-pull" --topic=$env:DLQ_TOPIC
 
 ### 1.5 GCS → Pub/Sub notification
 
-Create **once**. `notifications create` is **not** idempotent: each run adds another config. Two configs on the same topic → two Pub/Sub messages (and two ingest jobs) per PDF upload. Existing objects are not re-notified; only new/overwritten objects fire `OBJECT_FINALIZE`.
+Create **once**. `notifications create` is **not** idempotent: each run adds another config. Two configs on the same topic → two Pub/Sub messages (and two ingest runs) per PDF upload. Existing objects are not re-notified; only new/overwritten objects fire `OBJECT_FINALIZE`.
 
 List first; create only if none exist:
 
@@ -192,7 +204,7 @@ gcloud storage buckets notifications delete `
     projects/_/buckets/$env:BUCKET_NAME/notificationConfigs/2
 ```
 
-No PDF-only suffix filter: the worker accepts `.pdf` and returns 400 for Word/other (see [ingest-api.md](./ingest-api.md)).
+No PDF-only suffix filter on the bucket: the worker accepts `.pdf` and returns **400** for Word and other types (Pub/Sub does not retry 4xx).
 
 ### 1.6 Secrets
 
@@ -203,13 +215,11 @@ PowerShell pipes can add encoding noise; write temp files instead:
 ```powershell
 function New-SecretFromValue([string]$SecretId, [string]$Value) {
     if ([string]::IsNullOrWhiteSpace($Value)) {
-        Write-Error "La variable para $SecretId está vacía."
+        Write-Error "Empty value for secret $SecretId."
         return
     }
     $tmp = New-TemporaryFile
     [System.IO.File]::WriteAllText($tmp.FullName, $Value.Trim(), [System.Text.UTF8Encoding]::new($false))
-    
-    # Se usa el argumento separado por espacio
     $filePath = $tmp.FullName
     gcloud secrets create $SecretId --replication-policy="automatic" --data-file $filePath
     
@@ -237,7 +247,7 @@ If a secret already exists, add a version instead:
 gcloud iam service-accounts create $env:SA_NAME `
     --display-name="RAG-Agent ingest (runtime + Pub/Sub push)"
 
-# Read objects from any bucket in the project (narrow to bucket IAM later if you prefer)
+# Read objects from any bucket in the project (or bind only this bucket if you want a tighter grant)
 gcloud projects add-iam-policy-binding $env:GOOGLE_CLOUD_PROJECT `
     --member="serviceAccount:$env:SA_EMAIL" `
     --role="roles/storage.objectViewer"
@@ -275,8 +285,6 @@ Optional: every `gcloud` command in this shell as the SA:
 gcloud config set auth/impersonate_service_account $env:SA_EMAIL
 # undo: gcloud config unset auth/impersonate_service_account
 ```
-
-Local test script against GCS — TBD.
 
 ---
 
@@ -320,15 +328,16 @@ gcloud run deploy $env:INGEST_SERVICE_NAME `
     --timeout=3600 `
     --execution-environment=gen2 `
     --no-allow-unauthenticated `
-    --set-env-vars="USE_SECRET_MANAGER=true,GOOGLE_CLOUD_PROJECT=$env:GOOGLE_CLOUD_PROJECT,CHUNKER=section"
+    --set-env-vars="USE_SECRET_MANAGER=true,GOOGLE_CLOUD_PROJECT=$env:GOOGLE_CLOUD_PROJECT,CHUNKER=section,INGEST_PROFILE=cloud"
 ```
 
 Notes:
 
 - `concurrency=1` — required with Docling (Cloud Run default is ~80).
-- `timeout=3600` — long PDFs; Pub/Sub ack deadline is still max **600 s** (see design doc).
+- `timeout=3600` — Cloud Run request timeout. Pub/Sub still acks at **600 s**; the worker must finish before that or the message is redelivered.
 - `USE_SECRET_MANAGER=true` — required for `main_ingest` to load Secret Manager secrets.
-- Raise `--cpu` (e.g. 4–8) later if you measure CPU-bound Docling; start with 2.
+- `INGEST_PROFILE=cloud` — smaller Docling batches than the local default (fits `--memory=8Gi`).
+- Raise `--cpu` (e.g. 4–8) if you measure CPU-bound Docling; start with 2.
 
 
 

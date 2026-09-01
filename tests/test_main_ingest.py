@@ -72,7 +72,7 @@ def test_pubsub_push_indexes_pdf(ingest_client):
 def test_pubsub_push_rejects_word(ingest_client):
     response = ingest_client.post("/", json=_finalize_envelope("report.docx"))
     assert response.status_code == 400
-    assert "not supported yet" in response.json()["detail"]
+    assert "not supported" in response.json()["detail"]
 
 
 def test_pubsub_push_rejects_unsupported(ingest_client):

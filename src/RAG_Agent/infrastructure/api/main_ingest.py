@@ -1,7 +1,7 @@
 """Cloud Run ingest worker: Pub/Sub push → GCS download → run_ingest (no ADK).
 
-Canonical process and HTTP contract: ``docs/ingest-api.md`` (also used as this
-app's OpenAPI description when the file is present in the image/repo).
+Operator contract: ``docs/ingest.md`` (also used as this app's OpenAPI
+description when the file is present in the repo).
 """
 
 from __future__ import annotations
@@ -30,13 +30,13 @@ logger = logging.getLogger(__name__)
 
 _FALLBACK_DESCRIPTION = (
     "Pub/Sub push worker: GCS object finalize → index into Qdrant. "
-    "Canonical reference: docs/ingest-api.md in the repository."
+    "See docs/ingest.md in the repository."
 )
 
 
 def _api_description() -> str:
-    """Load docs/ingest-api.md when packaged with the image or running from the repo."""
-    doc = Path(__file__).resolve().parents[4] / "docs" / "ingest-api.md"
+    """Load docs/ingest.md when running from the repo."""
+    doc = Path(__file__).resolve().parents[4] / "docs" / "ingest.md"
     if doc.is_file():
         return doc.read_text(encoding="utf-8")
     return _FALLBACK_DESCRIPTION
@@ -90,7 +90,7 @@ def pubsub_push(
     if kind == "word":
         raise HTTPException(
             status_code=400,
-            detail="Word documents (.doc/.docx) are not supported yet",
+            detail="Word documents (.doc/.docx) are not supported",
         )
     if kind == "unsupported":
         raise HTTPException(

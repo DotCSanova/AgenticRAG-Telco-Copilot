@@ -7,7 +7,7 @@ Technical copilot based on Agentic-RAG for telecom engineers working with standa
 | Surface | Role | Image / entrypoint |
 |---|---|---|
 | **Serving (chat)** | `/chat`, `/reset-memory`, `/eval` stub | `Dockerfile.serving` → `main_chat` |
-| **Ingest** | Parse PDF → chunk → embed → Qdrant (delete+upsert by stem); Cloud Run `POST /` push worker | `Dockerfile.ingest` → `main_ingest` (CLI: `scripts/ingest_local.py`). API: [docs/ingest-api.md](docs/ingest-api.md) |
+| **Ingest** | Parse PDF → chunk → embed → Qdrant (delete+upsert by stem); Cloud Run `POST /` push worker | `Dockerfile.ingest` → `main_ingest` (CLI: `scripts/ingest_local.py`). [docs/ingest.md](docs/ingest.md) |
 | **Dev UI** | ADK web UI (same serving image) | compose profile `dev` |
 
 Chat never loads Docling/torch. Ingest never loads ADK.
@@ -41,9 +41,8 @@ docker compose --profile dev up -d agent-dev-ui
 
 ## Ingest
 
-Process and HTTP contract: [docs/ingest-api.md](docs/ingest-api.md).  
-GCP design: [docs/gcp-ingest-pubsub.md](docs/gcp-ingest-pubsub.md).  
-Deploy / ops: [docs/gcp_ingest_deployment.md](docs/gcp_ingest_deployment.md).
+How it works: [docs/ingest.md](docs/ingest.md).  
+GCP deploy: [docs/gcp_ingest_deployment.md](docs/gcp_ingest_deployment.md).
 
 ### Ingest a PDF (local)
 
