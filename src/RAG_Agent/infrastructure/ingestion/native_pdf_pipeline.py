@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import tempfile
+import time
 from dataclasses import replace
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -18,6 +19,7 @@ from RAG_Agent.infrastructure.ingestion.ingest_profile import (
     IngestHardwareProfile,
     get_ingest_profile,
 )
+from RAG_Agent.infrastructure.ingestion.ingest_stats import log_ingest_stats
 from RAG_Agent.infrastructure.ingestion.normalizers.docling_normalizer import DoclingNormalizer
 from RAG_Agent.infrastructure.ingestion.preprocessing.pymupdf_preprocessor import (
     PyMuPDFPreprocessor,
@@ -64,6 +66,16 @@ class NativePdfPipeline:
 
     def parse(self, path: Path) -> CanonicalDocument:
         path = Path(path)
+        started = time.perf_counter()
+        document = self._parse(path)
+        log_ingest_stats(
+            document,
+            source_path=path,
+            elapsed_s=time.perf_counter() - started,
+        )
+        return document
+
+    def _parse(self, path: Path) -> CanonicalDocument:
         profile = self._resolver.resolve(path)
         hw = self._hardware
         shard_size = hw.pages_per_shard
