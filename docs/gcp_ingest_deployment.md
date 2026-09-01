@@ -259,42 +259,17 @@ gcloud projects add-iam-policy-binding $env:GOOGLE_CLOUD_PROJECT `
 
 `roles/aiplatform.user` is **not** required for this ingest worker (Cohere + Docling only).
 
-Invoker on the Cloud Run service is granted in Phase 4 after deploy.
+Invoker on the Cloud Run service is granted in Phase 3 after deploy.
 
 ---
 
 
 
-## Phase 3 — Impersonation (optional local testing)
-
-Allows local ADC to act as `$env:SA_EMAIL` without JSON keys.
-
-```powershell
-$env:USER_EMAIL = $(gcloud config get-value account)
-
-gcloud iam service-accounts add-iam-policy-binding $env:SA_EMAIL `
-    --member="user:$env:USER_EMAIL" `
-    --role="roles/iam.serviceAccountTokenCreator"
-
-gcloud auth application-default login --impersonate-service-account=$env:SA_EMAIL
-```
-
-Optional: every `gcloud` command in this shell as the SA:
-
-```powershell
-gcloud config set auth/impersonate_service_account $env:SA_EMAIL
-# undo: gcloud config unset auth/impersonate_service_account
-```
-
----
+## Phase 3 — Build, deploy, connect Pub/Sub
 
 
 
-## Phase 4 — Build, deploy, connect Pub/Sub
-
-
-
-### 4.1 Artifact Registry + Cloud Build
+### 3.1 Artifact Registry + Cloud Build
 
 From the **repository root** (where `Dockerfile.ingest` and `cloudbuild.ingest.yaml` live):
 
@@ -313,7 +288,7 @@ gcloud builds submit `
 
 `cloudbuild.ingest.yaml` builds with `-f Dockerfile.ingest` (required: `--tag` alone only finds a file named `Dockerfile`).
 
-### 4.2 Deploy Cloud Run
+### 3.2 Deploy Cloud Run
 
 ```powershell
 gcloud run deploy $env:INGEST_SERVICE_NAME `
@@ -341,7 +316,7 @@ Notes:
 
 
 
-### 4.3 Pub/Sub can mint tokens for the push SA
+### 3.3 Pub/Sub can mint tokens for the push SA
 
 ```powershell
 $env:PROJECT_NUMBER = $(gcloud projects describe $env:GOOGLE_CLOUD_PROJECT --format="value(projectNumber)")
@@ -353,7 +328,7 @@ gcloud iam service-accounts add-iam-policy-binding $env:SA_EMAIL `
 
 (Prefer binding on the SA, not only project-wide.)
 
-### 4.4 Allow push SA to invoke Cloud Run
+### 3.4 Allow push SA to invoke Cloud Run
 
 ```powershell
 gcloud run services add-iam-policy-binding $env:INGEST_SERVICE_NAME `
@@ -364,7 +339,7 @@ gcloud run services add-iam-policy-binding $env:INGEST_SERVICE_NAME `
 
 
 
-### 4.5 Push subscription → `POST /`
+### 3.5 Push subscription → `POST /`
 
 ```powershell
 $env:SERVICE_URL = $(gcloud run services describe $env:INGEST_SERVICE_NAME `
