@@ -1,4 +1,6 @@
-from RAG_Agent.domain.value_objects.block import Block, BlockType, BoundingBox, TableData
+from dataclasses import replace
+
+from RAG_Agent.domain.value_objects.block import Block, BlockType, BoundingBox, LayoutSpan, TableData
 from RAG_Agent.domain.value_objects.table_groups import (
     attach_table_captions,
     looks_like_table_caption,
@@ -19,13 +21,14 @@ def _table(
     page: int = 1,
     bbox: BoundingBox | None = None,
     source_ref: str | None = None,
+    caption: str | None = None,
 ) -> Block:
     return Block(
         id=block_id,
         type=BlockType.TABLE,
         order=order,
         page=page,
-        table=TableData(headers=headers, rows=rows),
+        table=TableData(headers=headers, rows=rows, caption=caption),
         bbox=bbox,
         source_ref=source_ref,
     )
@@ -354,3 +357,324 @@ def test_refine_does_not_merge_when_column_count_drifts():
     ]
     tables = [block for block in refine_table_blocks(blocks) if block.type == BlockType.TABLE]
     assert len(tables) == 2
+
+
+def test_refine_stitches_narrow_wrap_into_last_row():
+    guidance = (
+        "a) Initiate the use of automated methods to manage the configuration "
+        "and lifecycle of resources within specific networks or environments. "
+        "b) Ensure that all resources have a defined lifetime determined by "
+        "policies and telemetry data."
+    )
+    comments = (
+        "Network resource configuration and lifecycle management is out of "
+        "scope for O-RAN specifications."
+    )
+    result = refine_table_blocks(
+        [
+            _table(
+                "t0",
+                headers=["CISA ZT Function", "Guidance", "Asset(s)", "Comments"],
+                rows=[
+                    [
+                        "Automation and Orchestration Capability",
+                        "a) Initiate the use of automated methods",
+                        "ASSET-C-40",
+                        "Network resource configuration",
+                    ]
+                ],
+                order=0,
+                page=184,
+                bbox=_bbox(y0=56, y1=556),
+                caption="Table 11.2.3-1: E2 Interface Identified Gaps",
+            ),
+            _table(
+                "t1",
+                headers=[],
+                rows=[
+                    [
+                        "to manage the configuration and lifecycle of resources "
+                        "within specific networks or environments. b) Ensure "
+                        "that all resources have a defined lifetime determined "
+                        "by policies and telemetry data.",
+                        "and lifecycle management is out of scope for O-RAN "
+                        "specifications.",
+                    ]
+                ],
+                order=1,
+                page=185,
+                bbox=_bbox(y0=634, y1=764),
+            ),
+        ]
+    )
+    tables = [block for block in result if block.type == BlockType.TABLE]
+    assert len(tables) == 1
+    table = tables[0].table
+    assert table is not None
+    assert table.caption == "Table 11.2.3-1: E2 Interface Identified Gaps"
+    assert table.rows[-1][0] == "Automation and Orchestration Capability"
+    assert table.rows[-1][1] == guidance
+    assert table.rows[-1][2] == "ASSET-C-40"
+    assert table.rows[-1][3] == comments
+    assert tables[0].metadata["merged_parts"] == "2"
+
+
+def test_refine_merges_header_drift_on_next_page():
+    result = refine_table_blocks(
+        [
+            _table(
+                "t0",
+                headers=[
+                    "Asset ID Data & Interfaces",
+                    "Asset Description Data & Interfaces",
+                ],
+                rows=[["ASSET-D-X", "The F1-c interface reuses the"]],
+                order=0,
+                page=30,
+                bbox=_bbox(y0=64, y1=200),
+                caption="Table 5.3.4-1: F1 Assets",
+            ),
+            _table(
+                "t1",
+                headers=["Asset ID", "Asset Description"],
+                rows=[["", "principles and protocol stack defined by 3GPP."]],
+                order=1,
+                page=31,
+                bbox=_bbox(y0=400, y1=760),
+            ),
+        ]
+    )
+    tables = [block for block in result if block.type == BlockType.TABLE]
+    assert len(tables) == 1
+    table = tables[0].table
+    assert table is not None
+    assert table.headers == ["Asset ID", "Asset Description"]
+    assert table.rows == [
+        [
+            "ASSET-D-X",
+            "The F1-c interface reuses the principles and protocol stack defined by 3GPP.",
+        ]
+    ]
+    assert table.caption == "Table 5.3.4-1: F1 Assets"
+
+
+def test_refine_does_not_merge_when_next_table_has_caption():
+    blocks = [
+        _table(
+            "t0",
+            headers=["A", "B"],
+            rows=[["1", "2"]],
+            order=0,
+            page=10,
+            bbox=_bbox(y0=70, y1=200),
+            caption="Table 1-1: First",
+        ),
+        _table(
+            "t1",
+            headers=["A", "B"],
+            rows=[["3", "4"]],
+            order=1,
+            page=11,
+            bbox=_bbox(y0=400, y1=700),
+            caption="Table 1-2: Second",
+        ),
+    ]
+    tables = [block for block in refine_table_blocks(blocks) if block.type == BlockType.TABLE]
+    assert len(tables) == 2
+    assert tables[1].table is not None
+    assert tables[1].table.caption == "Table 1-2: Second"
+
+
+def test_refine_merges_after_already_spanned_table():
+    bbox_p64 = _bbox(y0=70, y1=200)
+    bbox_p65 = _bbox(y0=400, y1=760)
+    bbox_p66 = _bbox(y0=500, y1=760)
+    first = replace(
+        _table(
+            "t0",
+            headers=["A", "B", "C"],
+            rows=[["keep", "long running guidance that does not finish", "1"]],
+            order=0,
+            page=64,
+            bbox=bbox_p64,
+            caption="Table 7.3.3-1: xApp Data Pillar Gap Analysis",
+        ),
+        metadata={"merged_parts": "2", "page_end": "65", "continued": "true"},
+        layout_spans=(
+            LayoutSpan(page=64, bbox=bbox_p64, source_ref="#/tables/1"),
+            LayoutSpan(page=65, bbox=bbox_p65, source_ref="#/tables/2"),
+        ),
+    )
+    result = refine_table_blocks(
+        [
+            first,
+            _table(
+                "t1",
+                headers=["0", "1", "2"],
+                rows=[["", "on the next folio.", "1"]],
+                order=1,
+                page=66,
+                bbox=bbox_p66,
+                source_ref="#/tables/3",
+            ),
+        ]
+    )
+    tables = [block for block in result if block.type == BlockType.TABLE]
+    assert len(tables) == 1
+    assert [span.page for span in tables[0].layout_spans] == [64, 65, 66]
+    assert tables[0].metadata["page_end"] == "66"
+    assert tables[0].metadata["merged_parts"] == "3"
+
+
+def test_refine_merges_when_continuation_caption_is_note():
+    result = refine_table_blocks(
+        [
+            _table(
+                "t0",
+                headers=["Function", "Guidance", "Comments"],
+                rows=[
+                    [
+                        "Visibility",
+                        "b) Commence correlating telemetry across",
+                        "SIEM collection is",
+                    ]
+                ],
+                order=0,
+                page=133,
+                bbox=_bbox(y0=70, y1=200),
+                caption="Table 7.3.11-4: O-Cloud Networks Pillar Gap Analysis",
+            ),
+            _table(
+                "t1",
+                headers=[],
+                rows=[
+                    [
+                        "traffic types and environments to facilitate analysis.",
+                        "considered out of scope for O-RAN.",
+                    ]
+                ],
+                order=1,
+                page=134,
+                bbox=_bbox(y0=500, y1=760),
+                caption=(
+                    "NOTE 1: Encryption of data in use is considered as Optimal stage "
+                    "according to O-RAN ZTA Security Requirements for Data Encryption."
+                ),
+            ),
+        ]
+    )
+    tables = [block for block in result if block.type == BlockType.TABLE]
+    assert len(tables) == 1
+    table = tables[0].table
+    assert table is not None
+    assert table.caption is not None
+    assert table.caption.startswith("Table 7.3.11-4")
+    assert "NOTE 1:" in table.caption
+    assert "traffic types and environments" in table.rows[-1][1]
+
+
+def test_attach_leaves_following_caption_when_table_already_labelled():
+    first_caption = "Table 11.2.3-1: E2 Interface"
+    second_caption = "Table 11.2.4-1: Y1 Interface"
+    result = attach_table_captions(
+        [
+            _table(
+                "t0",
+                headers=["A", "B"],
+                rows=[["1", "2"]],
+                order=0,
+                page=184,
+                caption=first_caption,
+            ),
+            _paragraph("cap", second_caption, order=1, page=185),
+            _table(
+                "t1",
+                headers=["A", "B"],
+                rows=[["3", "4"]],
+                order=2,
+                page=185,
+            ),
+        ]
+    )
+    tables = [block for block in result if block.type == BlockType.TABLE]
+    assert len(tables) == 2
+    assert tables[0].table is not None
+    assert tables[0].table.caption == first_caption
+    assert tables[1].table is not None
+    assert tables[1].table.caption == second_caption
+    assert all(block.text != second_caption for block in result if block.type == BlockType.PARAGRAPH)
+
+
+def test_refine_merges_when_real_headers_match_on_next_page():
+    result = refine_table_blocks(
+        [
+            _table(
+                "t0",
+                headers=["Asset ID", "Description"],
+                rows=[["A-1", "First row."]],
+                order=0,
+                page=30,
+                bbox=_bbox(y0=70, y1=200),
+                caption="Table 5.3.4-1: F1 Assets",
+            ),
+            _table(
+                "t1",
+                headers=["Asset ID", "Description"],
+                rows=[["A-2", "Second row."]],
+                order=1,
+                page=31,
+                bbox=_bbox(y0=400, y1=760),
+            ),
+        ]
+    )
+    tables = [block for block in result if block.type == BlockType.TABLE]
+    assert len(tables) == 1
+    assert tables[0].table is not None
+    assert tables[0].table.rows == [["A-1", "First row."], ["A-2", "Second row."]]
+
+
+def test_refine_merges_narrower_fragment_with_tail_headers():
+    result = refine_table_blocks(
+        [
+            _table(
+                "t0",
+                headers=["Function", "Guidance", "Asset(s)", "Req", "Gap", "Comments"],
+                rows=[
+                    [
+                        "Automation and Orchestration Capability",
+                        "Data lifecycle and security policies are automated.",
+                        "ASSET-D-06",
+                        "None",
+                        "Gap",
+                        "Out of scope, as data lifecycle and security",
+                    ]
+                ],
+                order=0,
+                page=162,
+                bbox=_bbox(y0=76, y1=760),
+                caption="Table 7.3.15-1: O-RU Data Pillar Gap Analysis",
+            ),
+            _table(
+                "t1",
+                headers=["", "", "", "policies fall under the operator's responsibilities."],
+                rows=[
+                    [
+                        "ASSET-D-16",
+                        "None",
+                        "Gap",
+                        "Out of scope, as data lifecycle and security policies fall under the operator's responsibilities.",
+                    ]
+                ],
+                order=1,
+                page=163,
+                bbox=_bbox(y0=305, y1=764),
+            ),
+        ]
+    )
+    tables = [block for block in result if block.type == BlockType.TABLE]
+    assert len(tables) == 1
+    table = tables[0].table
+    assert table is not None
+    assert table.rows[0][5].endswith("operator's responsibilities.")
+    assert table.rows[1][2] == "ASSET-D-16"
+    assert table.rows[1][0] == "Automation and Orchestration Capability"
