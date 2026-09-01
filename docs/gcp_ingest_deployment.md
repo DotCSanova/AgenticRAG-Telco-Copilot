@@ -6,7 +6,7 @@ Manual `gcloud` steps to run the **current** ingest worker on Google Cloud: uplo
 PDF → GCS (OBJECT_FINALIZE) → Pub/Sub → Cloud Run (POST /) → run_ingest → Qdrant
 ```
 
-Same application core as local: `scripts/ingest_local.py` / `run_ingest`. Chat and Postgres are **not** deployed here.
+Same application core as local: `scripts/ingest_local.py` / `run_ingest`. Laptop commands: [gcp_ingest_local.md](./gcp_ingest_local.md). Chat and Postgres are **not** deployed here.
 
 | | |
 |---|---|

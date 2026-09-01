@@ -12,6 +12,8 @@ Local CLI and Cloud Run call the same `run_ingest` path. Domain code sees a **lo
 
 ## Local
 
+Command runbook: [gcp_ingest_local.md](./gcp_ingest_local.md).
+
 ```bash
 uv sync --group ingest
 uv run --group ingest python scripts/ingest_local.py path/to/doc.pdf

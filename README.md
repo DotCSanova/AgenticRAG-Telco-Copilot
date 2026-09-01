@@ -42,6 +42,7 @@ docker compose --profile dev up -d agent-dev-ui
 ## Ingest
 
 How it works: [docs/ingest.md](docs/ingest.md).  
+Local commands: [docs/gcp_ingest_local.md](docs/gcp_ingest_local.md).  
 GCP deploy: [docs/gcp_ingest_deployment.md](docs/gcp_ingest_deployment.md).
 
 ### Ingest a PDF (local)
