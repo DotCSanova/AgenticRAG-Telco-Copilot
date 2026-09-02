@@ -177,70 +177,20 @@ class PyMuPDFPreprocessor:
             page.apply_redactions()
 
     def _clean_first_page(self, doc: fitz.Document) -> None:
+        """Redact cover-page images, footer-zone text, and title boilerplate."""
         page = doc[0]
-        page_width = page.rect.width
         page_height = page.rect.height
-
-        block_font_sizes: dict[tuple[int, ...], float] = {}
-        for block in page.get_text("dict").get("blocks", []):
-            if block.get("type") != 0:
-                continue
-
-            bbox_key = tuple(round(coord) for coord in block["bbox"])
-            max_size = 0.0
-            for line in block.get("lines", []):
-                for span in line.get("spans", []):
-                    max_size = max(max_size, span.get("size", 0))
-            block_font_sizes[bbox_key] = max_size
-
-        blocks = page.get_text("blocks")
-        title_block = self._find_title_block(blocks, page_width, page_height, block_font_sizes)
-
-        for block in blocks:
-            x0, y0, x1, y1, text, *_ = block
-            if title_block is not None and (x0, y0, x1, y1) == tuple(title_block[:4]):
-                continue
-            page.add_redact_annot(fitz.Rect(x0, y0, x1, y1))
 
         for image in page.get_images(full=True):
             for rect in page.get_image_rects(image[0]):
                 page.add_redact_annot(rect)
 
-        page.apply_redactions()
-
-    def _find_title_block(
-        self,
-        blocks: list[tuple],
-        page_width: float,
-        page_height: float,
-        block_font_sizes: dict[tuple[int, ...], float],
-    ) -> tuple | None:
-        candidates: list[tuple[float, float, tuple]] = []
-        title_top = self._layout.title_zone_top
-        title_bottom = self._layout.title_zone_bottom
-
-        for block in blocks:
+        for block in page.get_text("blocks"):
             x0, y0, x1, y1, text, *_ = block
-            text = text.strip()
-            if not text:
+            if not str(text).strip():
                 continue
-            if y0 < title_top * page_height or y1 > title_bottom * page_height:
-                continue
+            in_footer = self._block_zone(y0, y1, page_height) == "bottom"
+            if in_footer or self._rules.is_title_boilerplate(text):
+                page.add_redact_annot(fitz.Rect(x0, y0, x1, y1))
 
-            center_x = (x0 + x1) / 2.0
-            block_width = max(x1 - x0, 1.0)
-            centering_score = abs(center_x - page_width / 2.0) / block_width
-            bbox_key = (round(x0), round(y0), round(x1), round(y1))
-            font_size = block_font_sizes.get(bbox_key, 0.0)
-            candidates.append((centering_score, -font_size, block))
-
-        if candidates:
-            candidates.sort(key=lambda item: (item[0], item[1]))
-            return candidates[0][2]
-
-        for block in blocks:
-            x0, y0, _, _, text, *_ = block
-            if text.strip() and title_top * page_height < y0 < title_bottom * page_height:
-                return block
-
-        return None
+        page.apply_redactions()

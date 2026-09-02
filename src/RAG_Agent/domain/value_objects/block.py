@@ -15,6 +15,27 @@ class BlockType(str, Enum):
     NOTE = "note"
 
 
+def coord_origin_name(value: object | None) -> str:
+    """Return a JSON-safe PDF coordinate origin (e.g. ``BOTTOMLEFT``).
+
+    Args:
+        value: Enum, enum ``name``, or a string. ``str(CoordOrigin.BOTTOMLEFT)``
+            becomes ``"CoordOrigin.BOTTOMLEFT"``; that prefix is stripped.
+
+    Returns:
+        Origin token without a class prefix. Defaults to ``BOTTOMLEFT``.
+    """
+    if value is None:
+        return "BOTTOMLEFT"
+    name = getattr(value, "name", None)
+    if isinstance(name, str) and name:
+        return name
+    text = str(value).strip()
+    if "." in text:
+        text = text.rsplit(".", 1)[-1]
+    return text or "BOTTOMLEFT"
+
+
 @dataclass(frozen=True)
 class BoundingBox:
     x0: float
@@ -22,6 +43,15 @@ class BoundingBox:
     x1: float
     y1: float
     coord_origin: str = "BOTTOMLEFT"
+
+
+@dataclass(frozen=True)
+class LayoutSpan:
+    """Rectángulo en una página PDF. Un block lógico puede tener varios (tabla partida)."""
+
+    page: int | None = None
+    bbox: BoundingBox | None = None
+    source_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -57,3 +87,37 @@ class Block:
     bbox: BoundingBox | None = None
     source_ref: str | None = None
     metadata: dict[str, str] = field(default_factory=dict)
+    layout_spans: tuple[LayoutSpan, ...] = ()
+
+    def pdf_layout(self) -> tuple[LayoutSpan, ...]:
+        """Spans para overlay PDF. Varios si el contenido cruza páginas."""
+        if self.layout_spans:
+            return self.layout_spans
+        return (LayoutSpan(page=self.page, bbox=self.bbox, source_ref=self.source_ref),)
+
+    def page_numbers(self) -> tuple[int, ...]:
+        """Páginas en las que este block debe indexarse (chunk por página / overlay)."""
+        numbers: list[int] = []
+        seen: set[int] = set()
+
+        def add(page: int | None) -> None:
+            if page is not None and page not in seen:
+                seen.add(page)
+                numbers.append(page)
+
+        if self.layout_spans:
+            for span in self.layout_spans:
+                add(span.page)
+            return tuple(numbers)
+
+        add(self.page)
+        raw_end = self.metadata.get("page_end")
+        if raw_end and self.page is not None:
+            try:
+                end = int(raw_end)
+            except ValueError:
+                return tuple(numbers)
+            lo, hi = (self.page, end) if end >= self.page else (end, self.page)
+            for page in range(lo, hi + 1):
+                add(page)
+        return tuple(numbers)

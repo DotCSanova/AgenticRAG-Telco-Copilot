@@ -14,4 +14,6 @@ RUN uv run --no-sync python -c "from fastembed import SparseTextEmbedding; Spars
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-CMD ["fastapi", "run", "src/RAG_Agent/infrastructure/api/main_chat.py", "--port", "8080", "--host", "0.0.0.0"]
+# Use the image venv as-is. Plain `uv run` re-syncs default-groups and would
+# install the `dev` group (ruff, pytest) on every Cloud Run cold start.
+CMD ["python", "src/RAG_Agent/infrastructure/api/main_chat.py"]

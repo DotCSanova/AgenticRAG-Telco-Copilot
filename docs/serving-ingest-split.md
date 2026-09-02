@@ -40,7 +40,7 @@ Already on main (no work needed here except regressions): `search_documents` too
 ### Packaging notes landed with this split
 
 - uv `dependency-groups`: `serving`, `ingest`, `dev`, `notebooks`; `default-groups = ["serving", "dev"]`.
-- Host ingest may use CUDA torch (`pytorch-cu124`); `Dockerfile.ingest` uses `UV_TORCH_BACKEND=cpu`.
+- Host ingest: `--group ingest --extra cu124` (CUDA) or `--extra cpu`. `Dockerfile.ingest` uses `--extra cpu` (no NVIDIA wheels).
 - Docling OpenCV: `opencv-python-headless` + `override-dependencies` excluding `opencv-python` (no X11/GL apt in ingest image).
 - Compose: keep service name `agent-api`; add `agent-ingest` (`profiles: [ingest]`).
 

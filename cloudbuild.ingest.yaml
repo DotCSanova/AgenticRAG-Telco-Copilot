@@ -1,0 +1,20 @@
+# Build Dockerfile.ingest and push to Artifact Registry.
+# Usage (from repo root):
+#   gcloud builds submit --config=cloudbuild.ingest.yaml \
+#     --substitutions=_IMAGE_URL=REGION-docker.pkg.dev/PROJECT/REPO/rag-ingest:TAG .
+
+substitutions:
+  _IMAGE_URL: "us-central1-docker.pkg.dev/GOOGLE_CLOUD_PROJECT/cloud-run-source/rag-ingest:latest"
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_IMAGE_URL}
+      - -f
+      - Dockerfile.ingest
+      - .
+
+images:
+  - ${_IMAGE_URL}

@@ -15,9 +15,9 @@ from RAG_Agent.domain.doc_processing_rules.oran_block_refinement import (
     section_heading_level,
 )
 from RAG_Agent.domain.value_objects.block import Block
+from RAG_Agent.domain.value_objects.plantuml_groups import merge_plantuml_fragments
 
-
-# Front matter lo filtra el normalizer (is_removable_section). Preprocess solo chrome/portada.
+# Front/back matter lo filtra el normalizer (is_removable_section). Preprocess solo chrome/portada.
 _ORAN_PREPROCESS = PreprocessOptions(
     clean_repeated_headers_footers=True,
     clean_header_footer_images=True,
@@ -66,6 +66,9 @@ COMMON_ORAN_FRONT_MATTER: tuple[str, ...] = (
     "list of tables",
     "foreword",
     "modal verbs terminology",
+    "change history",
+    "revision history",
+    "history",
 )
 
 
@@ -145,6 +148,7 @@ class OranDocumentRules(BaseDocumentRules):
     preprocess_options: PreprocessOptions = field(default_factory=lambda: _ORAN_PREPROCESS)
     generic_doc_titles: frozenset[str] = field(default_factory=lambda: _ORAN_GENERIC_DOC_TITLES)
     title_boilerplate_pattern: str = _ORAN_TITLE_BOILERPLATE_PATTERN
+    cover_title_joined_max_len: int = 240
     noise_paragraph_chars: frozenset[str] = field(
         default_factory=lambda: _ORAN_NOISE_PARAGRAPH_CHARS
     )
@@ -157,6 +161,10 @@ class OranDocumentRules(BaseDocumentRules):
     def refine_blocks(self, blocks: list[Block]) -> list[Block]:
         """Corrige headings y niveles de lista mal detectados por Docling."""
         return refine_oran_blocks(blocks)
+
+    def merge_diagram_fragments(self, blocks: list[Block]) -> list[Block]:
+        """Merge split PlantUML listings typical of O-RAN figures."""
+        return merge_plantuml_fragments(blocks)
 
 
 @dataclass(frozen=True)

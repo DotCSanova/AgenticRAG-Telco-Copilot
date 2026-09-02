@@ -17,7 +17,7 @@ Notas de deuda estructural detectadas en revisión (2026). El hexagonal actual e
 
 **Hecho (2026-07-30).** serving/ingest split en `main`: `main_chat` + `Dockerfile.serving` / `Dockerfile.ingest`, composition `serving`⊥`ingest`, `ingest_local.py`, uv groups. Detalle: [serving-ingest-split.md](./serving-ingest-split.md), diseño [split-ingest-serving.md](./split-ingest-serving.md).
 
-**Siguiente.** GCS + Pub/Sub + Cloud Run Job reusing `build_ingest_service` / `ingest_local` core (no HTTP ingest).
+**Ingest GCP ahora.** Service + Pub/Sub push — [gcp-ingest-pubsub.md](./gcp-ingest-pubsub.md), runbook [gcp_ingest_deployment.md](./gcp_ingest_deployment.md). **Más adelante:** Job para lote / PDFs largos — [gcp-ingest-docling-runtime.md](./gcp-ingest-docling-runtime.md) (diseño; no implementado).
 
 ---
 

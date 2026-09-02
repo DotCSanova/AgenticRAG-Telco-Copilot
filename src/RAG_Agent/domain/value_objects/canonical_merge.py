@@ -4,16 +4,18 @@ from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from RAG_Agent.domain.value_objects._block_utils import renumber_blocks
+from RAG_Agent.domain.doc_processing_rules.document_processing import (
+    DocumentProcessingRules,
+)
+from RAG_Agent.domain.value_objects._block_utils import index_block_ids_by_page
 from RAG_Agent.domain.value_objects.block import Block
+from RAG_Agent.domain.value_objects.block_pipeline import refine_block_sequence
 from RAG_Agent.domain.value_objects.canonical_document import (
     CanonicalDocument,
     DocumentMetadata,
 )
 from RAG_Agent.domain.value_objects.page import Page
-from RAG_Agent.domain.value_objects.plantuml_groups import merge_plantuml_fragments
 from RAG_Agent.domain.value_objects.section import Section
-from RAG_Agent.domain.value_objects.table_groups import link_table_continuations
 
 
 def _shift_block(block: Block, *, page_offset: int, order: int) -> Block:
@@ -24,18 +26,28 @@ def _shift_block(block: Block, *, page_offset: int, order: int) -> Block:
             metadata["page_end"] = str(int(metadata["page_end"]) + page_offset)
         except ValueError:
             pass
-    return replace(block, id=f"block_{order}", order=order, page=page, metadata=metadata)
+    spans = tuple(
+        replace(
+            span,
+            page=span.page + page_offset if span.page is not None else None,
+        )
+        for span in block.layout_spans
+    )
+    return replace(
+        block,
+        id=f"block_{order}",
+        order=order,
+        page=page,
+        metadata=metadata,
+        layout_spans=spans,
+    )
 
 
 def _build_pages(
     blocks: list[Block],
     page_sizes: dict[int, tuple[float | None, float | None]],
 ) -> list[Page]:
-    by_page: dict[int, list[str]] = {}
-    for block in blocks:
-        if block.page is None:
-            continue
-        by_page.setdefault(block.page, []).append(block.id)
+    by_page = index_block_ids_by_page(blocks)
 
     pages: list[Page] = []
     for number in sorted(set(by_page) | set(page_sizes)):
@@ -59,12 +71,31 @@ def merge_canonical_shards(
     source_path: Path,
     profile_id: str | None,
     parser_name: str,
+    rules: DocumentProcessingRules,
     build_sections: Callable[[list[Block]], list[Section]],
     resolve_title: Callable[[list[Section], list[Block], str], str],
     title_hint: str,
     extra: dict[str, str] | None = None,
 ) -> CanonicalDocument:
-    """Fusiona canónicos de shards PDF. ``page_offset`` es el índice 0-based del primer folio."""
+    """Merge per-shard canonical documents, then run the shared block pipeline.
+
+    Page numbers are shifted by each shard's 0-based ``page_offset`` before
+    ``refine_block_sequence`` (removable sections are dropped after concat).
+
+    Args:
+        shards: ``(page_offset, canonical)`` pairs in reading order.
+        source_path: Original PDF path stored in metadata.
+        profile_id: Family profile id stored in metadata.
+        parser_name: Value stored in ``metadata.parser``.
+        rules: Family rules used by ``refine_block_sequence``.
+        build_sections: Builds sections from the refined block list.
+        resolve_title: Resolves the document title.
+        title_hint: Fallback title from the profile identity.
+        extra: Extra metadata merged into the result.
+
+    Returns:
+        Single canonical document covering all shards.
+    """
     if not shards:
         msg = "merge_canonical_shards requires at least one shard"
         raise ValueError(msg)
@@ -80,9 +111,7 @@ def merge_canonical_shards(
         for page in document.pages:
             page_sizes[page.number + page_offset] = (page.width, page.height)
 
-    blocks = renumber_blocks(
-        merge_plantuml_fragments(link_table_continuations(shifted))
-    )
+    blocks = refine_block_sequence(shifted, rules=rules)
     pages = _build_pages(blocks, page_sizes)
     sections = build_sections(blocks)
     title = resolve_title(sections, blocks, title_hint)

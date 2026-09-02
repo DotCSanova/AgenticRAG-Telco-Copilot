@@ -3,8 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 
-from RAG_Agent.domain.value_objects._block_utils import renumber_blocks
-from RAG_Agent.domain.value_objects.block import Block, BlockType
+from RAG_Agent.domain.value_objects.block import Block, BlockType, LayoutSpan
 
 _START = "@startuml"
 _END = "@enduml"
@@ -129,6 +128,26 @@ def _expand_span(blocks: list[Block], startuml_index: int) -> tuple[int, int]:
     return start, end
 
 
+def _layout_spans_from_parts(group: list[Block]) -> tuple[LayoutSpan, ...]:
+    """Keep existing fragment rects; add one span per new part if merging more.
+
+    A second ``refine_block_sequence`` (shard merge) sees one already-merged
+    CODE block. Rebuilding spans only from that block's bbox would drop
+    per-fragment ``layout_spans``. Parts that already have spans are copied;
+    parts without them contribute a single rect when the group has more than
+    one block.
+    """
+    collected: list[LayoutSpan] = []
+    for part in group:
+        if part.layout_spans:
+            collected.extend(part.layout_spans)
+        elif len(group) > 1:
+            collected.append(
+                LayoutSpan(page=part.page, bbox=part.bbox, source_ref=part.source_ref)
+            )
+    return tuple(collected)
+
+
 def _merge_group(group: list[Block]) -> Block:
     first = group[0]
     pages = [block.page for block in group if block.page is not None]
@@ -153,19 +172,22 @@ def _merge_group(group: list[Block]) -> Block:
         page=page_start,
         text=text,
         metadata=metadata,
-        # Conservar bbox/source del inicio (página de cita).
         bbox=first.bbox,
         source_ref=first.source_ref,
+        layout_spans=_layout_spans_from_parts(group),
     )
 
 
 def merge_plantuml_fragments(blocks: list[Block]) -> list[Block]:
-    """Fusiona fragments consecutivos @startuml…@enduml en un único block CODE.
+    """Merge consecutive @startuml…@enduml fragments into one CODE block.
 
-    - ``page`` = página del primer fragment (donde empieza el diagrama).
-    - ``metadata.page_end`` / ``continued`` si cruza páginas.
+    - ``page`` / ``bbox`` / ``source_ref`` = first fragment (cite target).
+    - ``layout_spans`` = one rect per fragment when the diagram spans
+      blocks or pages. Idempotent: a later pass keeps spans already set.
+    - ``metadata.page_end`` / ``continued`` if the diagram crosses pages.
     - ``metadata.language`` = ``plantuml``.
-    Incluye párrafos PlantUML inmediatamente anteriores al ``@startuml`` (p. ej. ``Box ...``).
+    Absorbs PlantUML paragraphs immediately before ``@startuml`` (e.g. ``Box``).
+    Does not re-number ids; ``refine_block_sequence`` does that once.
     """
     if not blocks:
         return []
@@ -209,4 +231,4 @@ def merge_plantuml_fragments(blocks: list[Block]) -> list[Block]:
         result.append(blocks[index])
         index += 1
 
-    return renumber_blocks(result)
+    return result

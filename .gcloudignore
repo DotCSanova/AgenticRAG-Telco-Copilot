@@ -5,9 +5,10 @@
 # stuff (notably .venv/) out of the source tarball Cloud Build receives.
 #
 # What Cloud Build actually needs to build the image:
-#   • Dockerfile
-#   • pyproject.toml
+#   • Dockerfile.ingest
+#   • pyproject.toml / uv.lock
 #   • src/
+# scripts/ is the laptop Compose CLI (bind-mounted); Cloud Run CMD is main_ingest.py.
 
 # ─── Python / uv ─────────────────────────────────────────────────────────────
 .venv/

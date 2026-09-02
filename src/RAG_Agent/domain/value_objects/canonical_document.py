@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
-from RAG_Agent.domain.value_objects.block import Block, BlockType, TableData
+from RAG_Agent.domain.value_objects.block import Block
 from RAG_Agent.domain.value_objects.page import Page
 from RAG_Agent.domain.value_objects.section import Section
-from RAG_Agent.domain.value_objects.table_groups import merge_table_group
 
 
 @dataclass(frozen=True)
@@ -52,14 +53,30 @@ class CanonicalDocument:
     def child_sections(self, parent_id: str) -> list[Section]:
         return [section for section in self.sections if section.parent_id == parent_id]
 
-    def table_group_blocks(self, group_id: str) -> list[Block]:
-        parts = [
-            block
-            for block in self.blocks.values()
-            if block.type == BlockType.TABLE
-            and block.metadata.get("table_group_id") == group_id
-        ]
-        return sorted(parts, key=lambda block: int(block.metadata.get("table_part_index", "0")))
+    def to_payload(self) -> dict[str, Any]:
+        """Serialize this document to a schema 1.0 JSON-ready dict.
 
-    def merged_table(self, group_id: str) -> TableData:
-        return merge_table_group(self.table_group_blocks(group_id))
+        Returns:
+            Payload with ``schema_version``, identity/stats split from ``extra``,
+            and blocks as a list ordered by ``order``. Irrelevant nulls omitted.
+        """
+        from RAG_Agent.domain.value_objects.canonical_codec import canonical_to_payload
+
+        return canonical_to_payload(self)
+
+    @classmethod
+    def from_payload(cls, data: Mapping[str, Any]) -> CanonicalDocument:
+        """Rebuild a document from a schema 1.0 payload.
+
+        Args:
+            data: Mapping produced by :meth:`to_payload`. Unknown keys are ignored.
+
+        Returns:
+            Canonical document with identity/stats written back into ``extra``.
+
+        Raises:
+            ValueError: If ``schema_version`` is missing or not ``1.0``.
+        """
+        from RAG_Agent.domain.value_objects.canonical_codec import canonical_from_payload
+
+        return canonical_from_payload(data)

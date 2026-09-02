@@ -14,8 +14,6 @@ class PageLayoutThresholds:
 
     header_top_ratio: float = 0.15
     footer_bottom_ratio: float = 0.85
-    title_zone_top: float = 0.20
-    title_zone_bottom: float = 0.80
 
 
 @dataclass(frozen=True)
@@ -85,6 +83,8 @@ class DocumentProcessingRules(Protocol):
 
     def refine_blocks(self, blocks: list[Block]) -> list[Block]: ...
 
+    def merge_diagram_fragments(self, blocks: list[Block]) -> list[Block]: ...
+
 
 @dataclass(frozen=True)
 class DocumentProfile:
@@ -143,7 +143,11 @@ class BaseDocumentRules:
         return line
 
     def is_removable_section(self, title: str) -> bool:
-        return self.normalize_section_title(title) in self.removable_sections
+        normalized = self.normalize_section_title(title)
+        return any(
+            normalized == section or normalized.startswith(f"{section}/")
+            for section in self.removable_sections
+        )
 
     def infer_heading_level(self, title: str, *, extracted_level: int = 1) -> int:
         return extracted_level
@@ -166,4 +170,8 @@ class BaseDocumentRules:
 
     def refine_blocks(self, blocks: list[Block]) -> list[Block]:
         """Hook post-extracción para normalización específica de familia. Default: identidad."""
+        return blocks
+
+    def merge_diagram_fragments(self, blocks: list[Block]) -> list[Block]:
+        """Optional family merge of split diagrams (e.g. PlantUML). Default: identity."""
         return blocks

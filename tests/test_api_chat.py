@@ -30,7 +30,7 @@ def test_chat_creates_session_and_returns_message(monkeypatch):
     monkeypatch.setattr(settings, "qdrant_enable_sparse", False)
     monkeypatch.setattr(settings, "qdrant_in_memory", True)
     monkeypatch.setattr(settings, "sessions_db_url", None)
-    monkeypatch.setattr(settings, "cloudsql_instance", None)
+    monkeypatch.setattr(settings, "instance_name", None)
 
     fake_runtime = _FakeRuntime()
     with TestClient(app) as client:
@@ -54,7 +54,7 @@ def test_reset_memory_recreates_session(monkeypatch):
     monkeypatch.setattr(settings, "qdrant_enable_sparse", False)
     monkeypatch.setattr(settings, "qdrant_in_memory", True)
     monkeypatch.setattr(settings, "sessions_db_url", None)
-    monkeypatch.setattr(settings, "cloudsql_instance", None)
+    monkeypatch.setattr(settings, "instance_name", None)
 
     with TestClient(app) as client:
         _install_fake_runtime(client, _FakeRuntime("before reset"))

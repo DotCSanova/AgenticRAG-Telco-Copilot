@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uvicorn
+import os
 import logging
 from contextlib import asynccontextmanager
 
@@ -22,12 +24,14 @@ from RAG_Agent.infrastructure.api.models import (
     ResetMemoryResponse,
 )
 from RAG_Agent.infrastructure.composition.serving import build_search_service
+from RAG_Agent.infrastructure.logging_config import configure_app_logging
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_app_logging()
     search_service = build_search_service()
     search_tool = make_search_documents_tool(search_service.execute)
     session_service = build_session_service()
@@ -123,6 +127,6 @@ async def reset_memory(request: ResetMemoryRequest, http_request: Request):
 
 
 if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    
+    port = int(os.environ.get("PORT_CHAT", "8080"))
+    uvicorn.run(app, host="0.0.0.0", port=port)

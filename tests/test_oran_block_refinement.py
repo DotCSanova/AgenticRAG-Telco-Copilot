@@ -17,6 +17,10 @@ def test_section_heading_level_numeric_and_named():
     assert section_heading_level("1 Introduction") == 1
     assert section_heading_level("Introduction") == 1
     assert section_heading_level("List of figures") == 1
+    assert section_heading_level("Contents") == 1
+    assert section_heading_level("Revision history") == 1
+    assert section_heading_level("History") == 1
+    assert section_heading_level("Change history/Change request (history)") == 1
     assert section_heading_level("Modal verbs terminology") == 1
     assert section_heading_level("A.1 Traffic steering use case") == 2
     assert section_heading_level("1) Non-RT RIC:") is None
@@ -123,7 +127,7 @@ def test_refine_blocks_promotes_named_heading_and_demotes_noise_heading():
     assert refined[1].level is None
 
 
-def test_refine_blocks_retains_annex_and_history_only_if_already_heading():
+def test_refine_blocks_retains_annex_only_if_already_heading():
     blocks = [
         Block(
             id="b0",
@@ -137,43 +141,54 @@ def test_refine_blocks_retains_annex_and_history_only_if_already_heading():
             id="b1",
             type=BlockType.HEADING,
             order=1,
-            text="Change history/Change request (history)",
-            level=1,
-            bbox=_bbox(56.0),
-        ),
-        Block(
-            id="b2",
-            type=BlockType.HEADING,
-            order=2,
             text="Additional information",
             level=1,
             bbox=_bbox(56.0),
         ),
         Block(
-            id="b3",
+            id="b2",
             type=BlockType.PARAGRAPH,
-            order=3,
-            text="Revision history",
-            bbox=_bbox(56.0),
-        ),
-        Block(
-            id="b4",
-            type=BlockType.HEADING,
-            order=4,
-            text="History",
-            level=1,
+            order=2,
+            text="Additional information",
             bbox=_bbox(56.0),
         ),
     ]
     refined = refine_oran_blocks(blocks)
     assert refined[0].type == BlockType.HEADING
     assert refined[1].type == BlockType.HEADING
-    assert refined[2].type == BlockType.HEADING
-    assert refined[3].type == BlockType.PARAGRAPH  # no promoción
-    assert refined[4].type == BlockType.HEADING
+    assert refined[2].type == BlockType.PARAGRAPH
 
 
-def test_refine_blocks_attaches_figure_caption_to_image_and_drops_paragraph():
+def test_refine_blocks_promotes_history_titles():
+    blocks = [
+        Block(
+            id="b0",
+            type=BlockType.PARAGRAPH,
+            order=0,
+            text="Revision history",
+            bbox=_bbox(56.0),
+        ),
+        Block(
+            id="b1",
+            type=BlockType.PARAGRAPH,
+            order=1,
+            text="Change history/Change request (history)",
+            bbox=_bbox(56.0),
+        ),
+        Block(
+            id="b2",
+            type=BlockType.HEADING,
+            order=2,
+            text="History",
+            level=1,
+            bbox=_bbox(56.0),
+        ),
+    ]
+    refined = refine_oran_blocks(blocks)
+    assert all(block.type == BlockType.HEADING for block in refined)
+
+
+def test_refine_blocks_demotes_figure_heading_and_does_not_attach_caption():
     blocks = [
         Block(
             id="img",
@@ -185,26 +200,17 @@ def test_refine_blocks_attaches_figure_caption_to_image_and_drops_paragraph():
         ),
         Block(
             id="cap",
-            type=BlockType.PARAGRAPH,
+            type=BlockType.HEADING,
             order=1,
             page=11,
             text="Figure 4.1.3-1: Dynamic handover management for V2X use case",
-            bbox=_bbox(56.0),
-        ),
-        Block(
-            id="p",
-            type=BlockType.PARAGRAPH,
-            order=2,
-            page=11,
-            text="Following prose remains.",
+            level=1,
             bbox=_bbox(56.0),
         ),
     ]
     refined = refine_oran_blocks(blocks)
-    assert len(refined) == 2
     assert refined[0].type == BlockType.IMAGE
     assert refined[0].image is not None
-    assert refined[0].image.caption == (
-        "Figure 4.1.3-1: Dynamic handover management for V2X use case"
-    )
-    assert refined[1].id == "p"
+    assert refined[0].image.caption is None
+    assert refined[1].type == BlockType.PARAGRAPH
+    assert refined[1].id == "cap"

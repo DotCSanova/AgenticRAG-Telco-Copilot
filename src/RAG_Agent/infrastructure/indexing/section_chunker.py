@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from RAG_Agent.domain.ports.chunker import Chunker
+from RAG_Agent.domain.value_objects.block import BlockType
 from RAG_Agent.domain.value_objects.block_render import BlockTextFormat, render_blocks
 from RAG_Agent.domain.value_objects.canonical_document import CanonicalDocument
 from RAG_Agent.domain.value_objects.chunk import Chunk
@@ -8,7 +9,11 @@ from RAG_Agent.domain.value_objects.section import Section
 
 
 class SectionChunker(Chunker):
-    """Chunk por secciones hoja del árbol; ``section_path`` en metadata."""
+    """Chunk por sección con texto propio.
+
+    Las hojas siempre se emiten. Un padre solo-heading (estructural) se omite;
+    un padre con preámbulo (tablas/párrafos antes del primer hijo) sí se indexa.
+    """
 
     def chunk(self, document: CanonicalDocument) -> list[Chunk]:
         doc_id = _doc_id(document)
@@ -20,10 +25,12 @@ class SectionChunker(Chunker):
         parent_ids_with_children = {
             section.parent_id for section in sections if section.parent_id is not None
         }
-        leaves = [section for section in sections if section.id not in parent_ids_with_children]
 
         chunks: list[Chunk] = []
-        for index, section in enumerate(leaves):
+        index = 0
+        for section in sections:
+            if _is_structural_parent(section, document, parent_ids_with_children):
+                continue
             blocks = document.blocks_for_section(section.id)
             text, block_ids = render_blocks(blocks, fmt=BlockTextFormat.MARKDOWN)
             if not text:
@@ -47,7 +54,25 @@ class SectionChunker(Chunker):
                     },
                 )
             )
+            index += 1
         return chunks
+
+
+def _is_structural_parent(
+    section: Section,
+    document: CanonicalDocument,
+    parent_ids_with_children: set[str | None],
+) -> bool:
+    """True si la sección tiene hijos y no aporta cuerpo más allá del heading."""
+    if section.id not in parent_ids_with_children:
+        return False
+    body = [
+        block
+        for block in document.blocks_for_section(section.id)
+        if block.type != BlockType.HEADING
+    ]
+    text, _ = render_blocks(body, fmt=BlockTextFormat.MARKDOWN)
+    return not text
 
 
 def _doc_id(document: CanonicalDocument) -> str:
@@ -70,7 +95,7 @@ def _section_path(section: Section, by_id: dict[str, Section], *, sep: str = " >
 
 
 def _chunks_from_orphan_blocks(document: CanonicalDocument, doc_id: str) -> list[Chunk]:
-    blocks = sorted(document.blocks.values(), key=lambda block: block.order)
+    blocks = sorted(document.blocks.values(), key=lambda item: item.order)
     text, block_ids = render_blocks(blocks, fmt=BlockTextFormat.MARKDOWN)
     if not text:
         return []

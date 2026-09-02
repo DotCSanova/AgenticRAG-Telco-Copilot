@@ -4,19 +4,24 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
-# Cloud Run Jobs / compose ingest: CPU torch (no NVIDIA in typical GCP Jobs).
-ENV UV_TORCH_BACKEND=cpu
-
-COPY uv.lock pyproject.toml README.md ./
+COPY uv.lock pyproject.toml ./
 COPY src ./src
-COPY scripts ./scripts
 
-RUN uv sync --frozen --no-cache --no-dev --no-default-groups --group ingest
+# pyproject.toml declares readme = "README.md"; stub so uv sync works without shipping README.
+RUN touch README.md
 
-# Hybrid indexing needs BM25 at runtime; bake it into the image layer.
+# --extra cpu: pytorch-cpu wheels (no nvidia-* / CUDA). Host GPU uses --extra cu124.
+RUN uv sync --frozen --no-cache --no-dev --no-default-groups --group ingest --extra cpu
+
+# Bake models into the image so Cloud Run does not hit HuggingFace at runtime (429 on shared IPs).
 RUN uv run --no-sync python -c "from fastembed import SparseTextEmbedding; SparseTextEmbedding('Qdrant/bm25')"
+# Docling layout + table structure (matches DoclingExtractor: do_ocr=False, do_table_structure=True).
+RUN uv run --no-sync docling-tools models download -o /app/docling-models layout tableformer
 
 ENV PATH="/app/.venv/bin:$PATH"
+ENV DOCLING_ARTIFACTS_PATH=/app/docling-models
 
-# Override with: docker compose run --rm agent-ingest python scripts/ingest_local.py /data/doc.pdf
-CMD ["python", "scripts/ingest_local.py", "--help"]
+# Use the image venv as-is. Plain `uv run` re-syncs default-groups (serving+dev)
+# and would download ADK/LiteLLM/ruff on every Cloud Run cold start.
+# Compose overrides this CMD with `python scripts/ingest_local.py`.
+CMD ["python", "src/RAG_Agent/infrastructure/api/main_ingest.py"]
