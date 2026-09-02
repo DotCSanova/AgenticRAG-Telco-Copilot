@@ -2,9 +2,9 @@
 
 Examples::
 
-    uv run --group ingest python scripts/ingest_local.py path/to/doc.pdf
+    uv run --group ingest --extra cpu python scripts/ingest_local.py path/to/doc.pdf
     docker compose run --rm agent-ingest python scripts/ingest_local.py /data/doc.pdf
-    uv run --group ingest python scripts/ingest_local.py data/doc.pdf --no-index `
+    uv run --group ingest --extra cpu python scripts/ingest_local.py data/doc.pdf --no-index `
         --canonical-out data/out/doc.canonical.json `
         --canonical-md-out data/out/doc.canonical.md `
         --json-out data/out/doc.chunks.json --md-out data/out/doc.chunks.md

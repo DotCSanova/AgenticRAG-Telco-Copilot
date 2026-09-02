@@ -16,7 +16,6 @@ from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.types.doc import DoclingDocument
 
 from RAG_Agent.infrastructure.ingestion.exceptions import PDFParsingException, PDFValidationError
-from RAG_Agent.infrastructure.ingestion.ingest_profile import LOCAL
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +37,14 @@ class DoclingExtractor:
 
     def __init__(
         self,
-        max_pages: int = LOCAL.pages_per_shard,
-        max_file_size_mb: int = LOCAL.max_file_size_mb,
+        max_pages: int,
+        max_file_size_mb: int,
+        layout_batch_size: int,
+        table_batch_size: int,
+        table_former_mode: TableFormerMode | str = "accurate",
+        *,
         do_ocr: bool = False,
         do_table_structure: bool = True,
-        layout_batch_size: int = LOCAL.layout_batch_size,
-        table_batch_size: int = LOCAL.table_batch_size,
-        table_former_mode: TableFormerMode | str = LOCAL.table_former_mode,
     ) -> None:
         pipeline_options = PdfPipelineOptions(
             do_table_structure=do_table_structure,

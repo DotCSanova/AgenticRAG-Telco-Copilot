@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uvicorn
+import os
 import logging
 from contextlib import asynccontextmanager
 
@@ -125,6 +127,6 @@ async def reset_memory(request: ResetMemoryRequest, http_request: Request):
 
 
 if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    
+    port = int(os.environ.get("PORT_CHAT", "8080"))
+    uvicorn.run(app, host="0.0.0.0", port=port)

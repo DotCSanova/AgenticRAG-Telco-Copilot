@@ -17,7 +17,7 @@ from RAG_Agent.infrastructure.ingestion.extractors.docling_extractor import (
 )
 from RAG_Agent.infrastructure.ingestion.ingest_profile import (
     IngestHardwareProfile,
-    get_ingest_profile,
+    ingest_hardware,
 )
 from RAG_Agent.infrastructure.ingestion.ingest_stats import log_ingest_stats
 from RAG_Agent.infrastructure.ingestion.normalizers.docling_normalizer import DoclingNormalizer
@@ -53,7 +53,7 @@ class NativePdfPipeline:
         hardware: IngestHardwareProfile | None = None,
     ) -> None:
         self._resolver = profile_resolver
-        self._hardware = hardware or get_ingest_profile()
+        self._hardware = hardware or ingest_hardware()
         self._extractor = extractor or DoclingExtractor(
             max_pages=self._hardware.pages_per_shard,
             max_file_size_mb=self._hardware.max_file_size_mb,
@@ -88,10 +88,11 @@ class NativePdfPipeline:
 
             page_count = count_pdf_pages(cleaned_path)
             logger.info(
-                "Ingest profile=%s pages=%d shard_size=%d file=%s",
-                hw.name,
+                "Ingest hardware pages=%d shard_size=%d layout_batch=%d table_batch=%d file=%s",
                 page_count,
                 shard_size,
+                hw.layout_batch_size,
+                hw.table_batch_size,
                 cleaned_path.name,
             )
 
@@ -143,7 +144,6 @@ class NativePdfPipeline:
                 )
 
             extra = dict(profile.identity.metadata)
-            extra["ingest_profile"] = hw.name
             extra["pages_per_shard"] = str(shard_size)
             if failed_shards:
                 extra["failed_shards"] = ",".join(map(str, failed_shards))

@@ -18,8 +18,9 @@ Chat never loads Docling/torch. Ingest never loads ADK.
 # Default DX: chat + tests (no Docling/torch)
 uv sync
 
-# Host-side indexing / GPU torch (optional; compose ingest is preferred)
-uv sync --group ingest
+# Host-side Docling (optional; local indexing uses compose ingest)
+# CPU wheels: --extra cpu. NVIDIA GPU: --extra cu124.
+uv sync --group ingest --extra cpu
 ```
 
 Copy `.env` with `COHERE_API_KEY` and Qdrant/session settings as needed.
@@ -27,7 +28,7 @@ Copy `.env` with `COHERE_API_KEY` and Qdrant/session settings as needed.
 ## Chat (Docker)
 
 ```bash
-docker compose up -d postgres qdrant agent-api
+docker compose up -d db qdrant agent-api
 curl -X POST http://localhost:8000/chat -H "Content-Type: application/json" \
   -d "{\"message\":\"ping\",\"user_id\":\"t\"}"
 ```
@@ -47,7 +48,7 @@ GCP deploy: [docs/gcp_ingest_deployment.md](docs/gcp_ingest_deployment.md).
 
 ### Ingest a PDF (local)
 
-Preferred (CPU image; override default worker CMD):
+Compose Qdrant only (same store as `agent-api`). Put the file in `data/`:
 
 ```bash
 docker compose up -d qdrant
@@ -55,20 +56,18 @@ docker compose --profile ingest run --rm agent-ingest \
   python scripts/ingest_local.py /data/your-doc.pdf
 ```
 
-Host script (needs `--group ingest`; uses CUDA torch on Windows/Linux when available):
+Production ingest is Cloud Run ([docs/gcp_ingest_deployment.md](docs/gcp_ingest_deployment.md)), not this service.
 
-```bash
-uv run --group ingest python scripts/ingest_local.py path/to/doc.pdf
-```
+Host `uv run … ingest_local.py` follows `.env` `QDRANT_URL` (can be Qdrant Cloud). Use it for `--no-index` dumps, not to feed local chat.
 
-Re-running the same path replaces prior chunks for that PDF stem (`delete_by_doc_id` + upsert). Parse-only: add `--no-index`.
+Re-running the same path replaces prior chunks for that PDF stem (`delete_by_doc_id` + upsert).
 
 ## Dependency groups
 
 | Group | Installs |
 |---|---|
 | *(default)* `serving` + `dev` | FastAPI, ADK, LiteLLM, sessions, pytest, … |
-| `ingest` | Docling, torch, pymupdf, sentence-transformers |
+| `ingest` | Docling, pymupdf, sentence-transformers. Add `--extra cpu` or `--extra cu124` for torch. |
 | `notebooks` | ipykernel |
 
 ## Credits

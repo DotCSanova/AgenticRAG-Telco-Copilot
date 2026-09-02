@@ -6,6 +6,8 @@ description when the file is present in the repo).
 
 from __future__ import annotations
 
+import os
+import uvicorn
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -140,6 +142,7 @@ def pubsub_push(
 
 
 if __name__ == "__main__":
-    import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    port = int(os.environ.get("PORT_INGEST", "8080"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
+

@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,14 +9,16 @@ class Settings(BaseSettings):
     use_secret_manager: bool = False
     google_cloud_project: str | None = None
 
-    # Hardware ingest profile name (local | cloud). Optional page-shard override.
-    ingest_profile: str = "local"
-    ingest_pages_per_shard: int | None = None
-    chunker: str = "semantic"  # section | semantic
+    # Docling hardware knobs (same Compose / Cloud Run). Env: INGEST_*.
+    ingest_pages_per_shard: int = Field(default=50, ge=1)
+    ingest_layout_batch_size: int = Field(default=4, ge=1)
+    ingest_table_batch_size: int = Field(default=2, ge=1)
+    chunker: str = "section"  # section | semantic
 
+    # LLM Providers API Keys
     cohere_api_key: str | None = None
 
-    # Semantic chunker
+    # Semantic chunker settings
     semantic_chunk_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     semantic_chunk_threshold: float = 0.7
     semantic_chunk_min_tokens: int = 64
@@ -41,14 +44,15 @@ class Settings(BaseSettings):
 
     # Agent (ADK + LiteLLM)
     agent_model: str = "cohere_chat/command-a-03-2025"
-    agent_app_name: str = "Agentic RAG Engineering Copilot for Telco"
+    agent_app_name: str = "rag_agent"
 
-    # Sessions (ADK). Prefer SESSIONS_DB_URL; else Cloud SQL socket from secrets.
+    # Sessions (ADK). Compose for local development sets SESSIONS_DB_URL.
+    # Cloud Run serving builds /cloudsql/PROJECT:REGION:INSTANCE from the fields below.
     sessions_db_url: str | None = None
+    region: str | None = None
+    instance_name: str | None = None
     db_user: str = "app"
     db_pass: str | None = None
-    sessions_db_name: str = "sessions"
-    cloudsql_instance: str | None = None  # project:region:instance
 
 
 settings = Settings()
