@@ -11,11 +11,15 @@ from RAG_Agent.domain.value_objects.figure_groups import looks_like_figure_capti
 _NAMED_SECTION_HEADINGS: frozenset[str] = frozenset(
     {
         "introduction",
+        "contents",
         "list of figures",
         "list of tables",
         "foreword",
         "modal verbs terminology",
         "executive summary",
+        "change history",
+        "revision history",
+        "history",
     }
 )
 
@@ -24,16 +28,10 @@ _NAMED_SECTION_HEADINGS: frozenset[str] = frozenset(
 _RETAIN_HEADING_EXACT: frozenset[str] = frozenset(
     {
         "additional information",
-        "history",
-        "revision history",
-        "change history",
     }
 )
 _RETAIN_HEADING_PREFIXES: tuple[str, ...] = (
     "annex",
-    "change history",
-    "revision history",
-    "change request",
 )
 
 # 1 Title | 1.2 Title | 4.2.2 Title
@@ -62,13 +60,21 @@ def _normalize_named_title(text: str) -> str:
     return line
 
 
+def _named_title_matches(normalized: str, name: str) -> bool:
+    """Exact title, or O-RAN compound like ``Change history/Change request``."""
+    return normalized == name or normalized.startswith(f"{name}/")
+
+
 def section_heading_level(text: str) -> int | None:
     """Nivel de heading de sección, o None si el texto no es un heading de sección."""
     line = _first_line(text)
     if not line:
         return None
 
-    if _normalize_named_title(line) in _NAMED_SECTION_HEADINGS:
+    if any(
+        _named_title_matches(_normalize_named_title(line), name)
+        for name in _NAMED_SECTION_HEADINGS
+    ):
         return 1
 
     match = _NUMERIC_SECTION_HEADING.match(line)
@@ -83,7 +89,7 @@ def section_heading_level(text: str) -> int | None:
 
 
 def is_retained_unnumbered_heading(text: str) -> bool:
-    """True para Annex / Change·Revision history / Additional information / History.
+    """True para Annex / Additional information.
 
     Solo debe usarse para no degradar un heading ya detectado (no promoción).
     """
@@ -168,7 +174,7 @@ def refine_oran_blocks(blocks: list[Block]) -> list[Block]:
     """Corrige headings/listas mal clasificados por Docling (reglas estructurales O-RAN).
 
     1. Conserva/promueve headings de sección numerada, anexo ``A.1`` o título nombrado.
-    2. Conserva (sin promover) headings ya detectados tipo Annex / Change history / …
+    2. Conserva (sin promover) headings ya detectados tipo Annex / Additional information.
     3. Degrada falsos headings: ``N)`` / etiquetas ``…:`` → list_item; figuras y resto → paragraph.
     4. Asigna ``level`` a list_items por indentación + etiquetas padre.
     """

@@ -143,7 +143,11 @@ class BaseDocumentRules:
         return line
 
     def is_removable_section(self, title: str) -> bool:
-        return self.normalize_section_title(title) in self.removable_sections
+        normalized = self.normalize_section_title(title)
+        return any(
+            normalized == section or normalized.startswith(f"{section}/")
+            for section in self.removable_sections
+        )
 
     def infer_heading_level(self, title: str, *, extracted_level: int = 1) -> int:
         return extracted_level

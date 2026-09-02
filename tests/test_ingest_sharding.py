@@ -173,6 +173,15 @@ def test_default_rules_are_minimal():
     assert oran.is_removable_section("Foreword")
 
 
+def test_oran_default_removes_history_back_matter():
+    rules = ORAN_RULES_REGISTRY.get("oran_default")
+    assert rules.is_removable_section("Revision history")
+    assert rules.is_removable_section("History")
+    assert rules.is_removable_section("Change history")
+    assert rules.is_removable_section("Change history/Change request (history)")
+    assert not rules.is_removable_section("1 Scope")
+
+
 def test_cascading_resolver_oran_and_sufg():
     resolver = CascadingProfileResolver(
         (OranProfileResolver(), DefaultProfileResolver()),

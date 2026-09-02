@@ -33,6 +33,30 @@ def _block(
     )
 
 
+def test_refine_promotes_contents_then_drops_toc_until_scope():
+    blocks = [
+        _block(0, "Contents"),
+        _block(
+            1,
+            "List of figures .....................................................................................................................................  3",
+        ),
+        _block(2, "1"),
+        _block(
+            3,
+            "Scope ................................................................................................................................................  5",
+        ),
+        _block(4, "1 Scope"),
+        _block(5, "This document specifies circular economy guidelines."),
+    ]
+    result = refine_block_sequence(blocks, rules=ORAN_RULES)
+    texts = [block.text for block in result]
+    assert "Contents" not in texts
+    assert not any("List of figures" in (text or "") for text in texts)
+    assert texts[0] == "1 Scope"
+    assert result[0].type == BlockType.HEADING
+    assert [block.id for block in result] == ["block_0", "block_1"]
+
+
 def test_refine_promotes_list_of_figures_then_drops_until_scope():
     blocks = [
         _block(0, "List of figures"),
@@ -49,6 +73,36 @@ def test_refine_promotes_list_of_figures_then_drops_until_scope():
     assert texts[0] == "1 Scope"
     assert result[0].type == BlockType.HEADING
     assert [block.id for block in result] == ["block_0", "block_1"]
+
+
+def test_refine_promotes_revision_history_then_drops_tables():
+    blocks = [
+        _block(0, "1 Scope"),
+        _block(1, "This document specifies circular economy guidelines."),
+        _block(2, "Revision history"),
+        _block(3, "2023.12.11 01.00 First version"),
+        _block(4, "History"),
+        _block(5, "2023.12.11 01.00 First version"),
+    ]
+    result = refine_block_sequence(blocks, rules=ORAN_RULES)
+    texts = [block.text for block in result]
+    assert texts == [
+        "1 Scope",
+        "This document specifies circular economy guidelines.",
+    ]
+
+
+def test_refine_drops_change_history_change_request():
+    blocks = [
+        _block(0, "A.1 Equipment lifecycle", block_type=BlockType.HEADING, level=2),
+        _block(1, "Annex body."),
+        _block(2, "Change history/Change request (history)"),
+        _block(3, "CR 001 First version of the specification."),
+    ]
+    result = refine_block_sequence(blocks, rules=ORAN_RULES)
+    texts = [block.text for block in result]
+    assert texts == ["A.1 Equipment lifecycle", "Annex body."]
+    assert not any("Change history" in (text or "") for text in texts)
 
 
 def test_default_rules_do_not_drop_list_of_figures_paragraph():

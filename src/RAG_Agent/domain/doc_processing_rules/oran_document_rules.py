@@ -17,7 +17,7 @@ from RAG_Agent.domain.doc_processing_rules.oran_block_refinement import (
 from RAG_Agent.domain.value_objects.block import Block
 from RAG_Agent.domain.value_objects.plantuml_groups import merge_plantuml_fragments
 
-# Front matter lo filtra el normalizer (is_removable_section). Preprocess solo chrome/portada.
+# Front/back matter lo filtra el normalizer (is_removable_section). Preprocess solo chrome/portada.
 _ORAN_PREPROCESS = PreprocessOptions(
     clean_repeated_headers_footers=True,
     clean_header_footer_images=True,
@@ -66,6 +66,9 @@ COMMON_ORAN_FRONT_MATTER: tuple[str, ...] = (
     "list of tables",
     "foreword",
     "modal verbs terminology",
+    "change history",
+    "revision history",
+    "history",
 )
 
 
