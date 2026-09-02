@@ -66,6 +66,40 @@ def test_section_chunker_only_leaf_sections_with_path():
     assert "Architecture" not in [chunk.section_id for chunk in chunks]
 
 
+def test_section_chunker_emits_parent_preamble_before_children():
+    blocks = {
+        "h0": Block(id="h0", type=BlockType.HEADING, order=0, page=7, text="4 Circular economy", level=1),
+        "p0": Block(id="p0", type=BlockType.PARAGRAPH, order=1, page=7, text="Indicator catalogue."),
+        "h1": Block(id="h1", type=BlockType.HEADING, order=2, page=13, text="4.1 O-CU", level=2),
+        "p1": Block(id="p1", type=BlockType.PARAGRAPH, order=3, page=13, text="CU priorities."),
+    }
+    sections = [
+        Section(
+            id="sec_4",
+            title="4 Circular economy",
+            level=1,
+            order=0,
+            block_ids=["h0", "p0"],
+            page_start=7,
+            page_end=12,
+        ),
+        Section(
+            id="sec_41",
+            title="4.1 O-CU",
+            level=2,
+            order=1,
+            parent_id="sec_4",
+            block_ids=["h1", "p1"],
+            page_start=13,
+            page_end=13,
+        ),
+    ]
+    chunks = SectionChunker().chunk(_doc(blocks=blocks, sections=sections))
+    assert [chunk.section_id for chunk in chunks] == ["sec_4", "sec_41"]
+    assert "Indicator catalogue." in chunks[0].text
+    assert chunks[0].metadata["section_path"] == "4 Circular economy"
+
+
 def test_section_chunker_flat_leaves_still_work():
     blocks = {
         "b0": Block(id="b0", type=BlockType.HEADING, order=0, page=1, text="Intro", level=1),

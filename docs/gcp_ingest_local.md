@@ -14,7 +14,6 @@ Local testing is **Docker only**. Production ingest is GCS → Pub/Sub → Cloud
 | Qdrant | Always `http://qdrant:6333` (empty API key). Compose **ignores** `QDRANT_URL` in `.env`. |
 | Secrets | Compose interpolates `COHERE_API_KEY` from `.env`. `USE_SECRET_MANAGER` stays false. |
 | Chunker | `CHUNKER` from `.env` (default `section`). |
-| Profile | `INGEST_PROFILE=local` (larger Docling batches than Cloud Run `cloud`). |
 
 Commands are **Windows PowerShell**, from the **repository root**.
 
@@ -57,6 +56,8 @@ docker compose --profile ingest run --rm agent-ingest `
 ```
 
 `data/` is mounted **read-only**. `--canonical-out` / `--json-out` cannot write under `/data`. For dumps, use the optional host CLI below.
+
+Compose bind-mounts `./scripts` at `/app/scripts` so `ingest_local.py` is not baked into the Cloud Run image.
 
 ---
 

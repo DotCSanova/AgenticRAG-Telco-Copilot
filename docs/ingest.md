@@ -12,14 +12,7 @@ Local CLI and Cloud Run call the same `run_ingest` path. Domain code sees a **lo
 
 ## Local
 
-Command runbook: [gcp_ingest_local.md](./gcp_ingest_local.md).
-
-```bash
-uv sync --group ingest
-uv run --group ingest python scripts/ingest_local.py path/to/doc.pdf
-```
-
-Docker (CPU image):
+Command runbook: [gcp_ingest_local.md](./gcp_ingest_local.md). Index into Compose Qdrant (same store as local chat):
 
 ```bash
 docker compose up -d qdrant
@@ -27,7 +20,9 @@ docker compose --profile ingest run --rm agent-ingest \
   python scripts/ingest_local.py /data/doc.pdf
 ```
 
-Parse without indexing: `--no-index`. Optional dumps: `--canonical-out`, `--canonical-md-out`, `--json-out`, `--md-out`.
+PDF must live under `data/`. Production ingest is Cloud Run, not this container.
+
+Parse without indexing: `--no-index`. Optional dumps (`--canonical-out`, …) belong on the **host** CLI (`data/` is read-only in Compose).
 
 ## Cloud Run
 
@@ -94,7 +89,9 @@ No HTTP health route. Cloud Run probes TCP on `$PORT` (image listens on **8080**
 | `USE_SECRET_MANAGER=true` | Load `cohere-api-key`, `qdrant-url`, `qdrant-api-key` from Secret Manager |
 | `GOOGLE_CLOUD_PROJECT` | Project id for Secret Manager |
 | `CHUNKER` | `section` or `semantic` (local default `semantic`; deploy sets `section`) |
-| `INGEST_PROFILE` | `local` or `cloud` (deploy sets `cloud`) |
+| `INGEST_PAGES_PER_SHARD` | Pages per Docling call (default `50`) |
+| `INGEST_LAYOUT_BATCH_SIZE` | Layout-model batch (default `4`) |
+| `INGEST_TABLE_BATCH_SIZE` | TableFormer batch (default `2`) |
 | `QDRANT_COLLECTION` | Default `tech_docs` |
 
 ## Code

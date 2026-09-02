@@ -247,13 +247,19 @@ Usar esta checklist al comparar opciones en siguientes iteraciones:
 
 ### 7.1 Arquitectura objetivo
 
-Tres superficies potenciales; contrato estable = **PDF en GCS**. Ingest event-driven = **Cloud Run Service + Pub/Sub push** (como el patrón del otro proyecto), **no** Job obligatorio. Job queda reservado a scraper periódico o backfills.
+Tres superficies potenciales; contrato estable = **PDF en GCS**.
+
+**Hoy (rama Pub/Sub):** GCS → Pub/Sub → Cloud Run **Service**. Contrato: [gcp-ingest-pubsub.md](./gcp-ingest-pubsub.md).
+
+**Más adelante (diseño, no implementado):** Cloud Run **Job** para el corpus ~154 y PDFs que superan el ack de 600 s. Norte: [gcp-ingest-docling-runtime.md](./gcp-ingest-docling-runtime.md). El Service no es el sitio para TableFormer en un PDF de 400+ páginas.
+
+Scraper futuro: Job que **escribe** GCS. Ingest Job **lee** un prefijo.
 
 ```text
-[Scraper Job] ──► GCS ──► Pub/Sub ──► [Ingest Service] ──► Qdrant
-                 ▲                         │
-         upload manual / ops               ▼
-                                    Registro (Postgres)
+[Scraper Job] ──► GCS prefix ──► [Ingest Job, N tasks] ──► Qdrant
+                 ▲                      │
+         upload manual / ops            ▼
+                                   canonical/ (GCS)
 
 [Chat Service] ──► Qdrant + Cohere query/rerank + ADK + Sessions
 ```
@@ -261,7 +267,7 @@ Tres superficies potenciales; contrato estable = **PDF en GCS**. Ingest event-dr
 | Surface | Rol |
 |---|---|
 | **Chat** | Service slim: `/chat`, `/reset-memory`; sin Docling/torch de ingest |
-| **Ingest** | Service heavy: envelope Pub/Sub → download GCS → temp → `IngestDocumentService(index=True)` → cleanup |
+| **Ingest** | Job heavy: lista prefijo GCS → una tarea por PDF → `run_ingest` → Qdrant. Service push opcional solo para lanzar Job |
 | **Scraper** (futuro) | Job + Scheduler: detecta docs en web, catálogo propio, solo escribe GCS |
 
 **Deduplicación en dos capas** (no mezclar):
@@ -276,10 +282,10 @@ Tres superficies potenciales; contrato estable = **PDF en GCS**. Ingest event-dr
 | Tema | Decisión de trabajo |
 |---|---|
 | Boundary | Dos surfaces (chat + ingest); no tres (sin retrieval API aparte) |
-| Trigger prod | GCS → Pub/Sub → Ingest **Service** |
+| Trigger prod | GCS prefix → Ingest **Job** (1 PDF / tarea). Service+push opcional como dispatcher — [gcp-ingest-docling-runtime.md](./gcp-ingest-docling-runtime.md) |
 | `/ingest` en chat | Fuera del proceso de chat |
 | Scraper | Fuera del ingest; solo alimenta el bucket |
-| Cloud Run Job para ingest | No necesario en el camino event-driven |
+| Cloud Run Job para ingest | **Sí** para Docling del corpus; no fan-out de páginas |
 
 Los escenarios S1–S4 / ejes A–D siguen en el doc como mapa de alternativas, no como menú abierto de producto.
 
@@ -432,9 +438,9 @@ Hoy el repo ya hace un Fan-Out/Fan-In **in-process**: `NativePdfPipeline` trocea
 
 | Paso | Qué | Cuándo |
 |---|---|---|
-| 0 | Norte §7.1: chat ⊥ ingest Service; GCS → Pub/Sub → un worker (`IngestDocumentService`) | Ahora |
+| 0 | Norte §7.1: chat ⊥ ingest; Docling en **Job** (1 PDF / tarea) — [gcp-ingest-docling-runtime.md](./gcp-ingest-docling-runtime.md) | Diseño 2026-08-31 |
 | 1 | Mismo worker, fases internas: parse → canonical en GCS → chunk/embed/upsert | Cuando duela re-indexar o depurar parse |
-| 2 | Fan-Out distribuido (splitter + workers Docling + aggregator) | Solo si Docling no cabe en un run |
+| 2 | Fan-Out distribuido de **páginas** (splitter + workers Docling + aggregator) | Solo si un PDF no cabe en una tarea con sharding in-process |
 | 3 | `04_indexer` como Service aparte disparado por `canonical/` | Opcional; re-index sin Docling |
 
 Regla: **desacoplar ADK del ingest primero; persistir canonical y registro; paralelizar Docling en la red solo cuando el sharding in-process no baste.**
@@ -445,6 +451,7 @@ Regla: **desacoplar ADK del ingest primero; persistir canonical y registro; para
 |---|---|
 | 2026-07-29 | Creación: ejes A–D, escenarios S1–S4; sin crownear |
 | 2026-07-29 | Crownear norte §7.1 (chat slim + ingest Service + GCS/Pub/Sub; scraper futuro; dual dedup). Sustituir decisiones abiertas por preguntas §7.2 |
+| 2026-08-31 | §7.1: Docling del corpus (~154) = Cloud Run Job; Service push ya no es el runtime TableFormer. Detalle: [gcp-ingest-docling-runtime.md](./gcp-ingest-docling-runtime.md) |
 | 2026-07-29 | Añadir §7.4: Fan-Out/Fan-In como evolución futura, no MVP; principios y pasos 0→3 |
 | 2026-07-29 | #8=serving/ingest split; §7.2.1 cómo implementar sin romper hexagonal; #6 path local para serving/ingest split |
 | 2026-07-29 | #1=A2 dos imágenes; §7.2.2 |

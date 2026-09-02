@@ -2,7 +2,9 @@
 
 Next phase after [serving-ingest-split.md](./serving-ingest-split.md).  
 Design north: [split-ingest-serving.md](./split-ingest-serving.md) §7.1.  
-**API / process reference (canonical for operators and OpenAPI):** [ingest-api.md](./ingest-api.md).
+**API / process reference (canonical for operators and OpenAPI):** [ingest-api.md](./ingest-api.md).  
+**Now (this branch):** Cloud Run **Service** + Pub/Sub **push**. Provision and test with [gcp_ingest_deployment.md](./gcp_ingest_deployment.md). That is the GCP ingest path to close `feature/gcp-ingest-pubsub`.  
+**Later (not this phase, not implemented):** Cloud Run **Job** for a ~154-PDF backfill or documents that miss the Pub/Sub **600 s** ack. Design only: [gcp-ingest-docling-runtime.md](./gcp-ingest-docling-runtime.md). Do not wire Jobs to ship this worker.
 
 **Branch:** `feature/gcp-ingest-pubsub`  
 **Goal:** event-driven indexing in GCP without Docling in the chat service. Same application core as local CLI: `run_ingest(path)` → `IngestDocumentService` (delete-by-stem + upsert).
@@ -26,7 +28,9 @@ Upload / ops ──► GCS (docs)
                        └─ Qdrant (Cloud)
 ```
 
-**Not in this phase:** Cloud Run **Job** on the hot path (Jobs reserved for scraper / backfills). Multi-agent / web search. Fan-Out Docling. Canonical Fan-In (§7.4). Terraform / CI-CD deploy. Word→PDF converter. SQL ingest registry. Local Pub/Sub emulator.
+**Not in this phase:** Cloud Run **Job** (no Job resource, no `jobs execute`). Terraform / CI-CD, Word→PDF, SQL ingest registry, local Pub/Sub emulator. Multi-agent / web search. Fan-Out Docling **por páginas**. Canonical Fan-In distribuido ([split-ingest-serving.md](./split-ingest-serving.md) §7.4).
+
+**Long PDFs / 154-doc corpus:** use local `ingest_local.py` until Jobs exist. On this Service, only PDFs that finish **before the 600 s Pub/Sub ack** (measure; a 468-page TS is not reliable on push).
 
 **Manual GCP setup:** [gcp_ingest_deployment.md](./gcp_ingest_deployment.md) (edit as you provision). CI/CD comes later.
 
@@ -263,7 +267,7 @@ Keep `/eval` on `main_chat`. Do not reintroduce monolith `main.py`.
 
 | Item | Why later |
 |---|---|
-| Cloud Run **Job** for hot-path ingest | Crowned as Service + push; Jobs for scraper/backfill |
+| Cloud Run **Job** | **Future.** Backfill (~154 PDFs) and docs that exceed the 600 s push ack. Not in this branch. Design: [gcp-ingest-docling-runtime.md](./gcp-ingest-docling-runtime.md) |
 | Scraper | Writes GCS only; separate surface |
 | Fan-Out / canonical store (§7.4) | After single-worker path is stable |
 | Multi-agent / web search | Product track |
@@ -461,3 +465,5 @@ Local DX unchanged: without the flag, composition uses pydantic Settings + `.env
 | 2026-07-31 | Remaining ops knobs listed in §8 with suggested defaults |
 | 2026-07-31 | Closed R1–R11 details: gcloud flags for scale; attributes for bucket/object; runbook PowerShell placeholders; eventType drop in app; stem examples; chat deploy optional ops; Secret Manager helper for GCP + Settings/.env local |
 | 2026-07-31 | Closed S1–S3: `USE_SECRET_MANAGER=true`; `QDRANT_COLLECTION`/`tech_docs`; SM helper ingest-only this PR. **Design ready for implementation.** |
+| 2026-08-31 | Noted 600 s ack vs long PDFs; Jobs sketched in [gcp-ingest-docling-runtime.md](./gcp-ingest-docling-runtime.md) (design only). |
+| 2026-09-01 | **Now = Service + push** (this file + runbook). Jobs stay future; do not implement them to close this branch. |

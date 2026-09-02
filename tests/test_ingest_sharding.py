@@ -21,7 +21,7 @@ from RAG_Agent.domain.value_objects.canonical_merge import merge_canonical_shard
 from RAG_Agent.domain.value_objects.page import Page
 from RAG_Agent.domain.value_objects.section import Section
 from RAG_Agent.infrastructure.ingestion.cascading_profile_resolver import CascadingProfileResolver
-from RAG_Agent.infrastructure.ingestion.ingest_profile import get_ingest_profile
+from RAG_Agent.infrastructure.ingestion.ingest_profile import ingest_hardware
 from RAG_Agent.infrastructure.ingestion.normalizers.docling_normalizer import DoclingNormalizer
 
 
@@ -93,9 +93,8 @@ def test_oran_document_id_rejects_non_oran():
     assert OranDocumentId.from_path("O-RAN.UNKNOWN.FOO-v01.00.pdf") is None
 
 
-def test_local_ingest_profile_defaults():
-    profile = get_ingest_profile("local")
-    assert profile.name == "local"
+def test_ingest_hardware_defaults():
+    profile = ingest_hardware()
     assert profile.pages_per_shard == 50
     assert profile.max_file_size_mb == 200
     assert profile.layout_batch_size == 4
@@ -103,32 +102,16 @@ def test_local_ingest_profile_defaults():
     assert profile.table_former_mode == "accurate"
 
 
-def test_cloud_ingest_profile_same_ceilings_smaller_batches():
-    local = get_ingest_profile("local")
-    cloud = get_ingest_profile("cloud")
-    assert cloud.name == "cloud"
-    assert cloud.pages_per_shard == local.pages_per_shard == 50
-    assert cloud.max_file_size_mb == local.max_file_size_mb == 200
-    assert cloud.table_former_mode == "accurate"
-    assert cloud.layout_batch_size == 2
-    assert cloud.table_batch_size == 1
-    assert cloud.layout_batch_size < local.layout_batch_size
-    assert cloud.table_batch_size < local.table_batch_size
-
-
-def test_unknown_ingest_profile_raises():
-    with pytest.raises(ValueError, match="Unknown ingest profile"):
-        get_ingest_profile("does-not-exist")
-
-
-def test_pages_per_shard_override_does_not_change_batches(monkeypatch):
+def test_ingest_hardware_reads_settings(monkeypatch):
     from RAG_Agent.config import settings
 
     monkeypatch.setattr(settings, "ingest_pages_per_shard", 10)
-    profile = get_ingest_profile("local")
+    monkeypatch.setattr(settings, "ingest_layout_batch_size", 3)
+    monkeypatch.setattr(settings, "ingest_table_batch_size", 1)
+    profile = ingest_hardware()
     assert profile.pages_per_shard == 10
-    assert profile.layout_batch_size == 4
-    assert profile.table_batch_size == 2
+    assert profile.layout_batch_size == 3
+    assert profile.table_batch_size == 1
     assert profile.table_former_mode == "accurate"
     assert profile.max_file_size_mb == 200
 
@@ -524,7 +507,6 @@ def _pipeline(extractor, normalizer=None, pages_per_shard: int = 2):
         extractor=extractor,
         normalizer=normalizer or _RangeNormalizer(),
         hardware=IngestHardwareProfile(
-            name="test",
             pages_per_shard=pages_per_shard,
             max_file_size_mb=200,
         ),
@@ -594,7 +576,12 @@ def test_docling_page_range_keeps_original_folio(tmp_path: Path):
     )
 
     pdf = _write_n_page_pdf(tmp_path / "two.pdf", 2)
-    extractor = DoclingExtractor(max_pages=2)
+    extractor = DoclingExtractor(
+        max_pages=2,
+        max_file_size_mb=200,
+        layout_batch_size=4,
+        table_batch_size=2,
+    )
     docling_doc = extractor.extract(pdf, page_range=(2, 2))
 
     page_nos: set[int] = set()
@@ -631,14 +618,10 @@ def test_extractor_pipeline_options_come_from_constructor_knobs():
     from RAG_Agent.infrastructure.ingestion.extractors.docling_extractor import (
         DoclingExtractor,
     )
-    from RAG_Agent.infrastructure.ingestion.ingest_profile import LOCAL
-
-    default = DoclingExtractor()._pipeline_options
-    assert default.layout_batch_size == LOCAL.layout_batch_size
-    assert default.table_batch_size == LOCAL.table_batch_size
-    assert default.table_structure_options.mode == TableFormerMode.ACCURATE
 
     options = DoclingExtractor(
+        max_pages=50,
+        max_file_size_mb=200,
         layout_batch_size=3,
         table_batch_size=1,
         table_former_mode="accurate",
@@ -656,7 +639,6 @@ def test_pipeline_wires_hardware_knobs_into_extractor():
     from RAG_Agent.infrastructure.ingestion.native_pdf_pipeline import NativePdfPipeline
 
     hardware = IngestHardwareProfile(
-        name="test",
         pages_per_shard=7,
         max_file_size_mb=12,
         layout_batch_size=3,

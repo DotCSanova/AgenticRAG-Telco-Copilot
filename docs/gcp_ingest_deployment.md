@@ -6,7 +6,7 @@ Manual `gcloud` steps to run the **current** ingest worker on Google Cloud: uplo
 PDF → GCS (OBJECT_FINALIZE) → Pub/Sub → Cloud Run (POST /) → run_ingest → Qdrant
 ```
 
-Same application core as local: `scripts/ingest_local.py` / `run_ingest`. Laptop commands: [gcp_ingest_local.md](./gcp_ingest_local.md). Chat and Postgres are **not** deployed here.
+Same application core as local: `scripts/ingest_local.py` / `run_ingest`. Laptop commands: [gcp_ingest_local.md](./gcp_ingest_local.md).
 
 | | |
 |---|---|
@@ -54,7 +54,6 @@ One service account is used both as Cloud Run runtime identity and as Pub/Sub pu
 4. Cohere API key — [https://dashboard.cohere.com/api-keys](https://dashboard.cohere.com/api-keys).
 5. Qdrant Cloud cluster — [https://cloud.qdrant.io](https://cloud.qdrant.io) (local compose Qdrant is for laptop only).
 
-Chat/Postgres is **out of scope** for this ingest deploy.
 
 ---
 
@@ -303,7 +302,7 @@ gcloud run deploy $env:INGEST_SERVICE_NAME `
     --timeout=3600 `
     --execution-environment=gen2 `
     --no-allow-unauthenticated `
-    --set-env-vars="USE_SECRET_MANAGER=true,GOOGLE_CLOUD_PROJECT=$env:GOOGLE_CLOUD_PROJECT,CHUNKER=section,INGEST_PROFILE=cloud"
+    --set-env-vars="USE_SECRET_MANAGER=true,GOOGLE_CLOUD_PROJECT=$env:GOOGLE_CLOUD_PROJECT,CHUNKER=section"
 ```
 
 Notes:
@@ -311,7 +310,6 @@ Notes:
 - `concurrency=1` — required with Docling (Cloud Run default is ~80).
 - `timeout=3600` — Cloud Run request timeout. Pub/Sub still acks at **600 s**; the worker must finish before that or the message is redelivered.
 - `USE_SECRET_MANAGER=true` — required for `main_ingest` to load Secret Manager secrets.
-- `INGEST_PROFILE=cloud` — smaller Docling batches than the local default (fits `--memory=8Gi`).
 - Raise `--cpu` (e.g. 4–8) if you measure CPU-bound Docling; start with 2.
 
 
@@ -367,12 +365,14 @@ gcloud pubsub subscriptions create $env:SUB_NAME `
 ## Smoke test
 
 ```powershell
-gcloud storage cp path\to\sample.pdf "gs://$env:BUCKET_NAME/sample.pdf"
+# Destination is the bucket (trailing /). The object name stays the local filename —
+# that stem is doc_id and the O-RAN profile matcher. Do not rename to sample.pdf.
+gcloud storage cp path\to\O-RAN.SuFG.CE-v01.00.pdf "gs://$env:BUCKET_NAME/"
 
 gcloud run services logs read $env:INGEST_SERVICE_NAME --region=$env:REGION --limit=50
 ```
 
-Expect logs with `bucket`, `object`, `doc_id`, `chunk_count`. Then query Qdrant / chat for that stem.
+Expect logs with `bucket`, `object`, `doc_id`, `chunk_count` (`doc_id` = PDF stem). Then query Qdrant / chat for that stem.
 
 ---
 

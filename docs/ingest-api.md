@@ -2,8 +2,9 @@
 
 Canonical reference for the **ingest surface**: how a technical PDF becomes searchable chunks in Qdrant, and how the Cloud Run worker exposes that process over HTTP.
 
-Design / GCP decisions: [gcp-ingest-pubsub.md](./gcp-ingest-pubsub.md).  
+Design / GCP **now** (Service + push): [gcp-ingest-pubsub.md](./gcp-ingest-pubsub.md).  
 Deploy / ops (manual `gcloud`): [gcp_ingest_deployment.md](./gcp_ingest_deployment.md).  
+**Later** (Jobs, design only): [gcp-ingest-docling-runtime.md](./gcp-ingest-docling-runtime.md).  
 Serving/chat API is separate (`main_chat`); this document covers ingest only.
 
 ---
@@ -39,7 +40,7 @@ Hexagonal boundary: domain/application know only a **local path**. GCS and Pub/S
 ### Local CLI
 
 ```bash
-uv run --group ingest python scripts/ingest_local.py path/to/doc.pdf
+uv run --group ingest --extra cpu python scripts/ingest_local.py path/to/doc.pdf
 docker compose --profile ingest run --rm agent-ingest \
   python scripts/ingest_local.py /data/doc.pdf
 ```
